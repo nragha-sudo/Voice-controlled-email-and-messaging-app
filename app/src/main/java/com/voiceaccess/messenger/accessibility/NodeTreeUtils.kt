@@ -1,5 +1,6 @@
 package com.voiceaccess.messenger.accessibility
 
+import android.os.Build
 import android.os.Bundle
 import android.view.accessibility.AccessibilityNodeInfo
 
@@ -99,11 +100,13 @@ object NodeTreeUtils {
 
     /**
      * Presses the IME "search"/"send" action on the on-screen keyboard, where supported
-     * (API 30+). Unlike the older actions (ACTION_CLICK, ACTION_SET_TEXT, ...), this one was
-     * only ever added as an AccessibilityAction object, not a plain int constant.
+     * (API 30+ only — the field doesn't exist on older framework versions, so it must be
+     * guarded rather than just referenced, unlike the older actions such as ACTION_CLICK).
      */
-    fun submitImeAction(node: AccessibilityNodeInfo): Boolean =
-        node.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.id)
+    fun submitImeAction(node: AccessibilityNodeInfo): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return false
+        return node.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.id)
+    }
 
     /** Some EditTexts only accept ACTION_SET_TEXT once focused. Best-effort, ignore the result. */
     fun focus(node: AccessibilityNodeInfo) {

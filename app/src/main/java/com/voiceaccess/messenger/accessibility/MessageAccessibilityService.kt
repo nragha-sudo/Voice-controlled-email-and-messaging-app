@@ -175,7 +175,53 @@ class MessageAccessibilityService : AccessibilityService() {
         scraped.takeIf { it.isNotBlank() }
     }
 
+    /**
+     * Opens [app], drives its search UI with [keywords], and scrapes the
+     * resulting match list. Handles both interaction models found in the
+     * wild: live-filter-as-you-type (WhatsApp) and explicit-submit search
+     * (Outlook) — it waits briefly after typing for live results, then also
+     * best-effort submits the IME search action in case the app needs it.
+     */
+    suspend fun performSearch(app: SourceApp, keywords: String): List<String> = actionMutex.withLock {
+        val selectors = AppUiConfig.forApp(app)
+        val listRoot = launchAndWaitForForeground(app) ?: return@withLock emptyList()
+
+        val searchIcon = NodeTreeUtils.findFirstByViewIdAny(listRoot, selectors.searchIconIds)
+            ?: NodeTreeUtils.findFirstByContentDescriptionAny(listRoot, selectors.searchIconContentDescriptions)
+            ?: return@withLock emptyList()
+        if (!NodeTreeUtils.click(searchIcon)) return@withLock emptyList()
+
+        waitForWindowUpdate(app.packageName, DETAIL_OPEN_TIMEOUT_MS)
+        delay(selectors.settleDelayMs)
+
+        val searchScreenRoot = pollForRoot(app.packageName, ROOT_POLL_TIMEOUT_MS) ?: return@withLock emptyList()
+        val searchField = NodeTreeUtils.findFirstByViewIdAny(searchScreenRoot, selectors.searchFieldIds)
+            ?: return@withLock emptyList()
+
+        NodeTreeUtils.focus(searchField)
+        if (!NodeTreeUtils.setText(searchField, keywords)) return@withLock emptyList()
+
+        // Give live-filtering UIs (WhatsApp) time to render, then best-effort
+        // submit the IME search action for UIs that require it (Outlook).
+        delay(LIVE_FILTER_SETTLE_MS)
+        pollForRoot(app.packageName, ROOT_POLL_TIMEOUT_MS)
+            ?.let { root -> NodeTreeUtils.findFirstByViewIdAny(root, selectors.searchFieldIds) }
+            ?.let { field -> NodeTreeUtils.submitImeAction(field) }
+
+        waitForWindowUpdate(app.packageName, DETAIL_OPEN_TIMEOUT_MS)
+        delay(selectors.settleDelayMs)
+
+        val resultsRoot = pollForRoot(app.packageName, ROOT_POLL_TIMEOUT_MS) ?: return@withLock emptyList()
+        val resultNodes = NodeTreeUtils.findAllByViewIdAny(resultsRoot, selectors.searchResultItemIds)
+        resultNodes
+            .mapNotNull { it.text?.toString()?.trim()?.takeIf(String::isNotEmpty) }
+            .distinct()
+            .take(MAX_SEARCH_RESULTS)
+    }
+
     companion object {
+        private const val MAX_SEARCH_RESULTS = 10
+        private const val LIVE_FILTER_SETTLE_MS = 400L
         private const val WHATSAPP_BUSINESS_PACKAGE = "com.whatsapp.w4b"
 
         private const val COLD_START_TIMEOUT_MS = 6_000L

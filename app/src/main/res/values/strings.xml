@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Voice Access Messenger</string>
+
+    <string name="btn_read_messages">Read My Messages</string>
+    <string name="btn_voice_command">Voice Command</string>
+    <string name="btn_search">Search</string>
+    <string name="hint_search">Search keywords…</string>
+    <string name="label_unread_count">Unread: %1$d</string>
+
+    <string name="status_idle">Idle</string>
+    <string name="status_notification_access_missing">Notification access is off — tap to enable</string>
+    <string name="status_accessibility_missing">Accessibility service is off — tap to enable</string>
+    <string name="status_ready">Ready</string>
+
+    <string name="prompt_reply_or_next">Say reply, skip, or done.</string>
+    <string name="prompt_say_reply">Go ahead, say your reply.</string>
+    <string name="reply_sent">Reply sent.</string>
+    <string name="reply_failed">Could not send the reply.</string>
+    <string name="no_unread_messages">You have no unread messages.</string>
+</resources>

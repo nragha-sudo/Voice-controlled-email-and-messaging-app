@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Declarative baseline for the service; MessageAccessibilityService also
+  configures AccessibilityServiceInfo programmatically at runtime (see
+  onServiceConnected) so the watched package list stays in one place
+  (AppUiConfig) instead of being duplicated here.
+-->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged|typeViewClicked"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:accessibilityFlags="flagRetrieveInteractiveWindows|flagReportViewIds"
+    android:canRetrieveWindowContent="true"
+    android:notificationTimeout="100"
+    android:packageNames="com.microsoft.office.outlook,com.whatsapp,com.whatsapp.w4b"
+    android:description="@string/app_name" />

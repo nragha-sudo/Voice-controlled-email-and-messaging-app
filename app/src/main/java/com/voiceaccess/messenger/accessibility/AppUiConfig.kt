@@ -36,7 +36,16 @@ data class AppUiSelectors(
     /** Container(s) holding the full email/message body on the detail screen. */
     val messageBodyIds: List<String>,
 
-    /** The reply / compose text field on the detail screen. */
+    /**
+     * Button that opens a reply/compose editor, for apps where it isn't
+     * already on screen after opening a message (e.g. Outlook's reading
+     * pane needs an explicit "Reply" tap; WhatsApp's input bar is already
+     * inline, so its lists here are empty and the step is skipped).
+     */
+    val replyOpenButtonIds: List<String>,
+    val replyOpenButtonContentDescriptions: List<String>,
+
+    /** The reply / compose text field, once the editor above is open. */
     val replyFieldIds: List<String>,
     val replyFieldContentDescriptions: List<String>,
 
@@ -82,6 +91,11 @@ object AppUiConfig {
             "com.microsoft.office.outlook:id/message_body_webview",
             "com.microsoft.office.outlook:id/conversation_message_body",
         ),
+        replyOpenButtonIds = listOf(
+            "com.microsoft.office.outlook:id/reply_button",
+            "com.microsoft.office.outlook:id/action_reply",
+        ),
+        replyOpenButtonContentDescriptions = listOf("Reply"),
         replyFieldIds = listOf(
             "com.microsoft.office.outlook:id/reply_compose_edit_text",
             "com.microsoft.office.outlook:id/compose_body_edit_text",
@@ -118,6 +132,8 @@ object AppUiConfig {
             "com.whatsapp:id/conversation_text_row",
             "com.whatsapp:id/message_text",
         ),
+        replyOpenButtonIds = emptyList(),
+        replyOpenButtonContentDescriptions = emptyList(),
         replyFieldIds = listOf(
             "com.whatsapp:id/entry",
         ),

@@ -219,6 +219,42 @@ class MessageAccessibilityService : AccessibilityService() {
             .take(MAX_SEARCH_RESULTS)
     }
 
+    /**
+     * Sends [replyText] into whichever conversation/email is currently on
+     * screen — callers are expected to invoke this right after
+     * [openAndReadMessage] while that conversation is still open, mirroring
+     * the voice flow: hear a message, then optionally reply to it.
+     */
+    suspend fun sendReply(app: SourceApp, replyText: String): Boolean = actionMutex.withLock {
+        val selectors = AppUiConfig.forApp(app)
+        var root = pollForRoot(app.packageName, ROOT_POLL_TIMEOUT_MS) ?: return@withLock false
+
+        val replyOpenButton = NodeTreeUtils.findFirstByViewIdAny(root, selectors.replyOpenButtonIds)
+            ?: NodeTreeUtils.findFirstByContentDescriptionAny(root, selectors.replyOpenButtonContentDescriptions)
+        if (replyOpenButton != null) {
+            NodeTreeUtils.click(replyOpenButton)
+            waitForWindowUpdate(app.packageName, DETAIL_OPEN_TIMEOUT_MS)
+            delay(selectors.settleDelayMs)
+            root = pollForRoot(app.packageName, ROOT_POLL_TIMEOUT_MS) ?: root
+        }
+
+        val replyField = NodeTreeUtils.findFirstByViewIdAny(root, selectors.replyFieldIds)
+            ?: NodeTreeUtils.findFirstByContentDescriptionAny(root, selectors.replyFieldContentDescriptions)
+            ?: return@withLock false
+
+        NodeTreeUtils.focus(replyField)
+        NodeTreeUtils.click(replyField)
+        if (!NodeTreeUtils.setText(replyField, replyText)) return@withLock false
+
+        delay(selectors.settleDelayMs)
+        val refreshedRoot = pollForRoot(app.packageName, ROOT_POLL_TIMEOUT_MS) ?: root
+        val sendButton = NodeTreeUtils.findFirstByViewIdAny(refreshedRoot, selectors.sendButtonIds)
+            ?: NodeTreeUtils.findFirstByContentDescriptionAny(refreshedRoot, selectors.sendButtonContentDescriptions)
+            ?: return@withLock false
+
+        NodeTreeUtils.click(sendButton)
+    }
+
     companion object {
         private const val MAX_SEARCH_RESULTS = 10
         private const val LIVE_FILTER_SETTLE_MS = 400L

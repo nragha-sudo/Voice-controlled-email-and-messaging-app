@@ -97,9 +97,13 @@ object NodeTreeUtils {
         return node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
     }
 
-    /** Presses the IME "search"/"send" action on the on-screen keyboard, where supported (API 30+). */
+    /**
+     * Presses the IME "search"/"send" action on the on-screen keyboard, where supported
+     * (API 30+). Unlike the older actions (ACTION_CLICK, ACTION_SET_TEXT, ...), this one was
+     * only ever added as an AccessibilityAction object, not a plain int constant.
+     */
     fun submitImeAction(node: AccessibilityNodeInfo): Boolean =
-        node.performAction(AccessibilityNodeInfo.ACTION_IME_ENTER)
+        node.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.id)
 
     /** Some EditTexts only accept ACTION_SET_TEXT once focused. Best-effort, ignore the result. */
     fun focus(node: AccessibilityNodeInfo) {

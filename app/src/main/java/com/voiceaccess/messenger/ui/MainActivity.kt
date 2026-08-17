@@ -82,6 +82,7 @@ class MainActivity : AppCompatActivity() {
         }
         binding.textPermissionBanner.setOnClickListener { openMissingPermissionSettings() }
         binding.btnClearQueue.setOnClickListener { confirmClearQueue() }
+        binding.btnStopReading.setOnClickListener { viewModel.controller.stopReading() }
 
         // Ask for the optional contacts permission once, up front, decoupled
         // from any listening action — asking it concurrently with a read/
@@ -111,6 +112,11 @@ class MainActivity : AppCompatActivity() {
                 }
                 launch {
                     viewModel.status.collect { binding.textStatus.text = it }
+                }
+                launch {
+                    viewModel.isReading.collect { reading ->
+                        binding.btnStopReading.visibility = if (reading) View.VISIBLE else View.GONE
+                    }
                 }
             }
         }

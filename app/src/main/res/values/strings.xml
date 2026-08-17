@@ -4,6 +4,7 @@
 
     <string name="btn_read_outlook">Outlook</string>
     <string name="btn_read_whatsapp">WhatsApp</string>
+    <string name="btn_stop_reading">Stop Reading</string>
     <string name="btn_voice_command">Voice Command</string>
     <string name="btn_search">Search</string>
     <string name="hint_search">Search keywords…</string>

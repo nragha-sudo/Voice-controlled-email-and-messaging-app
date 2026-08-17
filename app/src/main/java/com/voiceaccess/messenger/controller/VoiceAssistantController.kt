@@ -38,23 +38,52 @@ class VoiceAssistantController(
     private val _status = MutableStateFlow(context.getString(R.string.status_idle))
     val status: StateFlow<String> = _status
 
+    /** True while a read/search flow is actively running — drives the Stop Reading button's visibility. */
+    private val _isReading = MutableStateFlow(false)
+    val isReading: StateFlow<Boolean> = _isReading
+
     /**
      * "Read my messages" (or "read outlook/whatsapp messages"): queries
      * unread rows — filtered to [app] if given, otherwise both apps — reads
      * each aloud, and listens for reply/skip/done after every one.
      */
     fun readUnreadMessages(app: SourceApp? = null) {
-        if (activeJob?.isActive == true) {
-            Log.d(TAG, "readUnreadMessages(${app?.name}) ignored — a flow is already running")
-            return
-        }
-        activeJob = scope.launch { runReadUnreadMessages(app) }
+        launchExclusive("readUnreadMessages(${app?.name})") { runReadUnreadMessages(app) }
     }
 
     /** "Search [keywords]", optionally scoped to one app; null searches both. */
     fun search(app: SourceApp?, keywords: String) {
-        if (keywords.isBlank() || activeJob?.isActive == true) return
-        activeJob = scope.launch { runSearch(app, keywords) }
+        if (keywords.isBlank()) return
+        launchExclusive("search") { runSearch(app, keywords) }
+    }
+
+    /**
+     * Stops an in-progress read/search immediately — halts whatever's
+     * currently being spoken (rather than waiting for the current utterance
+     * to finish) and cancels the rest of the run. Any message that wasn't
+     * explicitly marked done stays unread, so it's read again next time —
+     * same non-destructive default as a timeout or "skip".
+     */
+    fun stopReading() {
+        if (activeJob?.isActive != true) return
+        activeJob?.cancel()
+        tts.stop()
+        _status.value = context.getString(R.string.status_ready)
+    }
+
+    private fun launchExclusive(label: String, block: suspend () -> Unit) {
+        if (activeJob?.isActive == true) {
+            Log.d(TAG, "$label ignored — a flow is already running")
+            return
+        }
+        activeJob = scope.launch {
+            _isReading.value = true
+            try {
+                block()
+            } finally {
+                _isReading.value = false
+            }
+        }
     }
 
     /** Best-effort natural-language dispatch for free-form voice/typed commands. */

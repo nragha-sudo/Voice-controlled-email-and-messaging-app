@@ -26,6 +26,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
 
     val status: StateFlow<String> = controller.status
+    val isReading: StateFlow<Boolean> = controller.isReading
 
     /** Debug utility: wipes the entire local message_queue table (read and unread). */
     fun clearQueue() {

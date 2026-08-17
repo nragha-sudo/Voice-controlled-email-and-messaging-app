@@ -42,6 +42,11 @@ class TextToSpeechManager(context: Context) {
         withTimeoutOrNull(timeoutMs) { completion.await() }
     }
 
+    /** Halts whatever's currently being spoken immediately, without destroying the engine — used by the Stop Reading button. */
+    fun stop() {
+        tts?.stop()
+    }
+
     fun shutdown() {
         tts?.stop()
         tts?.shutdown()

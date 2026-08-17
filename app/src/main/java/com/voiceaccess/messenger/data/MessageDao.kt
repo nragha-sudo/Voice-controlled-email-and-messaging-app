@@ -15,13 +15,18 @@ interface MessageDao {
     @Query("SELECT * FROM message_queue WHERE notification_key = :notificationKey LIMIT 1")
     suspend fun findByNotificationKey(notificationKey: String): MessageEntity?
 
-    @Query("SELECT * FROM message_queue WHERE read_aloud = 0 ORDER BY timestamp ASC")
+    // Secondary "id ASC" tie-break makes the order fully deterministic even
+    // when two rows share a timestamp (e.g. Outlook's `notification.when`
+    // can be less precise than WhatsApp's, or several messages land in the
+    // same millisecond) — without it, SQLite's tie order is unspecified and
+    // can vary between runs, which is what "random order" looked like.
+    @Query("SELECT * FROM message_queue WHERE read_aloud = 0 ORDER BY timestamp ASC, id ASC")
     suspend fun getUnread(): List<MessageEntity>
 
-    @Query("SELECT * FROM message_queue WHERE read_aloud = 0 AND source_app = :sourceApp ORDER BY timestamp ASC")
+    @Query("SELECT * FROM message_queue WHERE read_aloud = 0 AND source_app = :sourceApp ORDER BY timestamp ASC, id ASC")
     suspend fun getUnreadByApp(sourceApp: SourceApp): List<MessageEntity>
 
-    @Query("SELECT * FROM message_queue WHERE read_aloud = 0 ORDER BY timestamp ASC")
+    @Query("SELECT * FROM message_queue WHERE read_aloud = 0 ORDER BY timestamp ASC, id ASC")
     fun observeUnread(): Flow<List<MessageEntity>>
 
     @Query("SELECT COUNT(*) FROM message_queue WHERE read_aloud = 0")

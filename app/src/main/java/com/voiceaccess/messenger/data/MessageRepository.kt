@@ -26,6 +26,9 @@ class MessageRepository(context: Context) {
 
     suspend fun markReadAloud(id: Long) = dao.markReadAloud(id)
 
+    /** Wipes the entire local queue (read and unread). New notifications are captured normally afterward. */
+    suspend fun clearAll() = dao.clearAll()
+
     /**
      * Inserts a freshly-posted notification, or updates the existing queue
      * row in place if we've already seen this notification key (e.g. the OS

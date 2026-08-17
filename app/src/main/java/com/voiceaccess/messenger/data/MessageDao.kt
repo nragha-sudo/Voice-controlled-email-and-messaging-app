@@ -35,4 +35,8 @@ interface MessageDao {
 
     @Query("DELETE FROM message_queue WHERE read_aloud = 1 AND timestamp < :olderThanTimestamp")
     suspend fun pruneReadOlderThan(olderThanTimestamp: Long)
+
+    /** Wipes the whole queue (read and unread) — used by the "Clear Queue" debug button. */
+    @Query("DELETE FROM message_queue")
+    suspend fun clearAll()
 }

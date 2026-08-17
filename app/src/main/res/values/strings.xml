@@ -21,4 +21,11 @@
     <string name="skipped_for_later">Skipped for later.</string>
     <string name="stopping_read_aloud">Stopping.</string>
     <string name="no_unread_messages">You have no unread messages.</string>
+
+    <string name="btn_clear_queue">Clear Queue</string>
+    <string name="clear_queue_confirm_title">Clear message queue?</string>
+    <string name="clear_queue_confirm_message">This deletes every queued message (read and unread) from the local database. New notifications are still captured normally afterward. This can\'t be undone.</string>
+    <string name="clear_queue_confirm_positive">Clear</string>
+    <string name="clear_queue_confirm_negative">Cancel</string>
+    <string name="clear_queue_done">Queue cleared.</string>
 </resources>

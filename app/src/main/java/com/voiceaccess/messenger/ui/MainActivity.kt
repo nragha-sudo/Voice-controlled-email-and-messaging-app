@@ -7,6 +7,7 @@ import android.os.Bundle
 import android.provider.Settings
 import android.speech.RecognizerIntent
 import android.view.View
+import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
@@ -15,6 +16,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.voiceaccess.messenger.R
 import com.voiceaccess.messenger.accessibility.MessageAccessibilityService
 import com.voiceaccess.messenger.data.SourceApp
@@ -76,6 +78,7 @@ class MainActivity : AppCompatActivity() {
             viewModel.controller.search(app = null, keywords = keywords)
         }
         binding.textPermissionBanner.setOnClickListener { openMissingPermissionSettings() }
+        binding.btnClearQueue.setOnClickListener { confirmClearQueue() }
 
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -115,6 +118,19 @@ class MainActivity : AppCompatActivity() {
             pendingMicAction = action
             requestMicPermission.launch(Manifest.permission.RECORD_AUDIO)
         }
+    }
+
+    /** Destructive/debug action — confirm before wiping the local queue. */
+    private fun confirmClearQueue() {
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.clear_queue_confirm_title)
+            .setMessage(R.string.clear_queue_confirm_message)
+            .setPositiveButton(R.string.clear_queue_confirm_positive) { _, _ ->
+                viewModel.clearQueue()
+                Toast.makeText(this, R.string.clear_queue_done, Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton(R.string.clear_queue_confirm_negative, null)
+            .show()
     }
 
     private fun launchVoiceCommandRecognizer() {

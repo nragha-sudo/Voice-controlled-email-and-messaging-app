@@ -9,6 +9,7 @@ import com.voiceaccess.messenger.data.SourceApp
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -25,6 +26,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
 
     val status: StateFlow<String> = controller.status
+
+    /** Debug utility: wipes the entire local message_queue table (read and unread). */
+    fun clearQueue() {
+        viewModelScope.launch { repository.clearAll() }
+    }
 
     override fun onCleared() {
         controller.shutdown()

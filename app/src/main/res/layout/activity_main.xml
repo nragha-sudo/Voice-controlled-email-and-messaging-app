@@ -125,5 +125,15 @@
             android:textSize="14sp"
             tools:text="Ready" />
 
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnClearQueue"
+            style="@style/Widget.MaterialComponents.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="end"
+            android:layout_marginTop="32dp"
+            android:text="@string/btn_clear_queue"
+            android:textColor="#B3261E" />
+
     </LinearLayout>
 </ScrollView>

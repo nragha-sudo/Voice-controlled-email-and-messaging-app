@@ -59,18 +59,33 @@ object NodeTreeUtils {
         }
 
     /**
-     * Scrapes every piece of visible text under [root] into a single string,
-     * used to read a full email/chat body that the notification preview
-     * truncated. De-duplicates adjacent repeats, since many layouts mirror
-     * text into both a text node and a content-description on a wrapper.
+     * Scrapes every piece of visible text under [root], one entry per node,
+     * in document order. A single scrape only ever sees whatever is
+     * currently on screen — callers scraping a scrollable document (a long
+     * email body) need to call this once per scroll position and merge the
+     * results themselves; see [findScrollableNode].
      */
-    fun collectVisibleText(root: AccessibilityNodeInfo): String {
+    fun collectVisibleTextLines(root: AccessibilityNodeInfo): LinkedHashSet<String> {
         val lines = LinkedHashSet<String>()
         for (node in allNodes(root)) {
             if (!node.isVisibleToUser) continue
             node.text?.toString()?.trim()?.takeIf { it.isNotEmpty() }?.let { lines.add(it) }
         }
-        return lines.joinToString("\n")
+        return lines
+    }
+
+    /**
+     * Scrapes every piece of visible text under [root] into a single string,
+     * used to read a full email/chat body that the notification preview
+     * truncated. De-duplicates adjacent repeats, since many layouts mirror
+     * text into both a text node and a content-description on a wrapper.
+     */
+    fun collectVisibleText(root: AccessibilityNodeInfo): String = collectVisibleTextLines(root).joinToString("\n")
+
+    /** Finds the first scrollable node in the subtree (including [root] itself), for paginated content like a long email body. */
+    fun findScrollableNode(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        if (root.isScrollable) return root
+        return allNodes(root).firstOrNull { it.isScrollable }
     }
 
     /** Walks up the parent chain to find a clickable ancestor (list rows are rarely the leaf node). */

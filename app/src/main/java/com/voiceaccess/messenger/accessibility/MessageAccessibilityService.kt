@@ -206,22 +206,73 @@ class MessageAccessibilityService : AccessibilityService() {
             return@withLock null
         }
 
-        val bodyNode = NodeTreeUtils.findFirstByViewIdAny(detailRoot, selectors.messageBodyIds)
-        val scraped = if (bodyNode != null) {
-            Log.d(TAG, "openAndReadMessage: id=${message.id} body container matched via messageBodyIds")
-            NodeTreeUtils.collectVisibleText(bodyNode)
+        val scraped = if (selectors.scrollBodyForFullContent) {
+            scrapeBodyWithScrolling(message.id, app, selectors, detailRoot)
         } else {
-            Log.w(TAG, "openAndReadMessage: id=${message.id} none of AppUiConfig's messageBodyIds " +
-                "(${selectors.messageBodyIds}) matched for ${app.name} — falling back to scraping the whole " +
-                "screen. This is the low-confidence path; if the read-out text includes toolbar/nav clutter, " +
-                "re-inspect the real body container's resource-id and add it to AppUiConfig.")
-            NodeTreeUtils.collectVisibleText(detailRoot)
+            val bodyNode = NodeTreeUtils.findFirstByViewIdAny(detailRoot, selectors.messageBodyIds)
+            if (bodyNode != null) {
+                Log.d(TAG, "openAndReadMessage: id=${message.id} body container matched via messageBodyIds")
+                NodeTreeUtils.collectVisibleText(bodyNode)
+            } else {
+                Log.w(TAG, "openAndReadMessage: id=${message.id} none of AppUiConfig's messageBodyIds " +
+                    "(${selectors.messageBodyIds}) matched for ${app.name} — falling back to scraping the whole " +
+                    "screen. This is the low-confidence path; if the read-out text includes toolbar/nav clutter, " +
+                    "re-inspect the real body container's resource-id and add it to AppUiConfig.")
+                NodeTreeUtils.collectVisibleText(detailRoot)
+            }
         }
 
         Log.d(TAG, "openAndReadMessage: id=${message.id} scraped ${scraped.length} chars " +
             "(preview: \"${scraped.take(80)}${if (scraped.length > 80) "…" else ""}\")")
 
         scraped.takeIf { it.isNotBlank() }
+    }
+
+    /**
+     * Scrolls through a long, single-document body (Outlook's email view)
+     * and accumulates text across every scroll position — a single scrape
+     * only ever sees whatever fits on screen, which is why long emails were
+     * previously read back truncated. Stops once a scroll reveals no new
+     * text (reached the bottom, or the body genuinely isn't scrollable) or
+     * [MAX_SCROLL_ATTEMPTS] is hit, whichever comes first.
+     */
+    private suspend fun scrapeBodyWithScrolling(
+        messageId: Long,
+        app: SourceApp,
+        selectors: AppUiSelectors,
+        initialRoot: AccessibilityNodeInfo,
+    ): String {
+        val collected = LinkedHashSet<String>()
+        var previousCount = -1
+        var scrollSteps = 0
+
+        while (scrollSteps < MAX_SCROLL_ATTEMPTS) {
+            val root = pollForRoot(app.packageName, ROOT_POLL_TIMEOUT_MS) ?: initialRoot
+            val scrapeRoot = NodeTreeUtils.findFirstByViewIdAny(root, selectors.messageBodyIds) ?: root
+            collected.addAll(NodeTreeUtils.collectVisibleTextLines(scrapeRoot))
+
+            if (collected.size == previousCount) {
+                Log.d(TAG, "openAndReadMessage: id=$messageId scrolling stopped after $scrollSteps step(s) — " +
+                    "no new text revealed (reached the end, or the body isn't actually scrollable)")
+                break
+            }
+            previousCount = collected.size
+
+            val scrollableNode = NodeTreeUtils.findScrollableNode(scrapeRoot)
+            val scrolled = scrollableNode?.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD) ?: false
+            if (!scrolled) {
+                Log.d(TAG, "openAndReadMessage: id=$messageId no scrollable node found (or it refused to scroll " +
+                    "further) after $scrollSteps step(s)")
+                break
+            }
+
+            delay(selectors.settleDelayMs)
+            scrollSteps++
+        }
+
+        Log.d(TAG, "openAndReadMessage: id=$messageId scraped body across $scrollSteps scroll step(s), " +
+            "${collected.size} distinct line(s) total")
+        return collected.joinToString("\n")
     }
 
     /**
@@ -338,6 +389,9 @@ class MessageAccessibilityService : AccessibilityService() {
         private const val MAX_SEARCH_RESULTS = 10
         private const val LIVE_FILTER_SETTLE_MS = 400L
         private const val WHATSAPP_BUSINESS_PACKAGE = "com.whatsapp.w4b"
+
+        /** Cap on scroll-and-accumulate steps for a long email body, so a mis-detected "scrollable" node can't loop forever. */
+        private const val MAX_SCROLL_ATTEMPTS = 20
 
         private const val COLD_START_TIMEOUT_MS = 6_000L
         private const val ROOT_POLL_TIMEOUT_MS = 4_000L

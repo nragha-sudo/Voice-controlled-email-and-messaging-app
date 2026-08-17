@@ -37,6 +37,17 @@ data class AppUiSelectors(
     val messageBodyIds: List<String>,
 
     /**
+     * Whether the body is one long scrollable document that must be
+     * scrolled through and accumulated to capture the full content — true
+     * for Outlook, whose email body only ever exposes whatever's currently
+     * on screen. False for WhatsApp: a chat view is a scrollable list of
+     * *many* messages, not one document, so scrolling it would read back
+     * the entire conversation history instead of just the new message —
+     * and its bubbles are short enough to already fit on screen anyway.
+     */
+    val scrollBodyForFullContent: Boolean,
+
+    /**
      * Button that opens a reply/compose editor, for apps where it isn't
      * already on screen after opening a message (e.g. Outlook's reading
      * pane needs an explicit "Reply" tap; WhatsApp's input bar is already
@@ -91,6 +102,7 @@ object AppUiConfig {
             "com.microsoft.office.outlook:id/message_body_webview",
             "com.microsoft.office.outlook:id/conversation_message_body",
         ),
+        scrollBodyForFullContent = true,
         replyOpenButtonIds = listOf(
             "com.microsoft.office.outlook:id/reply_button",
             "com.microsoft.office.outlook:id/action_reply",
@@ -132,6 +144,7 @@ object AppUiConfig {
             "com.whatsapp:id/conversation_text_row",
             "com.whatsapp:id/message_text",
         ),
+        scrollBodyForFullContent = false,
         replyOpenButtonIds = emptyList(),
         replyOpenButtonContentDescriptions = emptyList(),
         replyFieldIds = listOf(

@@ -83,6 +83,15 @@ class MainActivity : AppCompatActivity() {
         binding.textPermissionBanner.setOnClickListener { openMissingPermissionSettings() }
         binding.btnClearQueue.setOnClickListener { confirmClearQueue() }
 
+        // Ask for the optional contacts permission once, up front, decoupled
+        // from any listening action — asking it concurrently with a read/
+        // voice-command button tap (as a previous version of this screen
+        // did) meant a system permission dialog could pop up at the exact
+        // moment SpeechRecognizer needed focus, breaking the listen.
+        if (hasPermission(Manifest.permission.RECORD_AUDIO) && !hasPermission(Manifest.permission.READ_CONTACTS)) {
+            requestVoicePermissions.launch(arrayOf(Manifest.permission.READ_CONTACTS))
+        }
+
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 launch {
@@ -113,21 +122,13 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun withMicPermission(action: () -> Unit) {
-        val micGranted = hasPermission(Manifest.permission.RECORD_AUDIO)
-        val contactsGranted = hasPermission(Manifest.permission.READ_CONTACTS)
-
-        if (micGranted) {
+        if (hasPermission(Manifest.permission.RECORD_AUDIO)) {
             action()
-            if (!contactsGranted) {
-                // Opportunistic ask for name-biasing accuracy; never blocks this action.
-                pendingMicAction = null
-                requestVoicePermissions.launch(arrayOf(Manifest.permission.READ_CONTACTS))
-            }
             return
         }
 
         pendingMicAction = action
-        val permissions = if (contactsGranted) {
+        val permissions = if (hasPermission(Manifest.permission.READ_CONTACTS)) {
             arrayOf(Manifest.permission.RECORD_AUDIO)
         } else {
             arrayOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.READ_CONTACTS)

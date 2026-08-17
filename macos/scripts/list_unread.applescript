@@ -1,55 +1,51 @@
--- Diagnostic, read-only: lists unread Outlook messages across every account
--- without marking anything read or speaking anything. Run this first, before
--- anything that actually acts on your mail, to confirm the AppleScript
--- dictionary assumptions (verified against Outlook's own Script Editor
--- dictionary: message.plain text content, message.sender, message.is read,
--- account.inbox, exchange account) hold on this machine.
---
--- Run directly in Script Editor (paste + press the Run button), or from
--- Terminal with: osascript macos/scripts/list_unread.applescript
+-- Diagnostic v2, read-only. Tests several ways of reaching unread mail and
+-- reports the real error for each instead of silently swallowing it, since
+-- v1 (all three account-type queries returning empty with no visible error)
+-- didn't tell us whether that's a real empty result or a masked failure.
 
 tell application "Microsoft Outlook"
-	set acctList to {}
+	set diag to {}
+
 	try
-		set acctList to acctList & (every exchange account)
-	end try
-	try
-		set acctList to acctList & (every imap account)
-	end try
-	try
-		set acctList to acctList & (every pop account)
-	end try
-	try
-		set acctList to acctList & (every eas account)
+		set exAccts to every exchange account
+		set end of diag to "exchange account: " & (count of exAccts) & " found"
+	on error errMsg
+		set end of diag to "exchange account: ERROR - " & errMsg
 	end try
 
-	set outputLines to {}
-	repeat with acct in acctList
-		set acctName to name of acct
-		try
-			set theInbox to inbox of acct
-			set unreadMsgs to (messages of theInbox whose is read is false)
-			set unreadCount to count of unreadMsgs
-			set end of outputLines to acctName & ": " & unreadCount & " unread"
-			repeat with m in unreadMsgs
-				set msgSubject to subject of m
-				set senderName to "(unknown sender)"
-				try
-					set senderName to name of (sender of m)
-				end try
-				set end of outputLines to "  - " & senderName & " | " & msgSubject
-			end repeat
-		on error errMsg
-			set end of outputLines to acctName & ": ERROR - " & errMsg
-		end try
-	end repeat
+	try
+		set imapAccts to every imap account
+		set end of diag to "imap account: " & (count of imapAccts) & " found"
+	on error errMsg
+		set end of diag to "imap account: ERROR - " & errMsg
+	end try
 
-	if (count of outputLines) is 0 then
-		return "No accounts found via exchange/imap/pop/eas account. Dictionary assumption about account types needs revisiting."
-	end if
+	try
+		set popAccts to every pop account
+		set end of diag to "pop account: " & (count of popAccts) & " found"
+	on error errMsg
+		set end of diag to "pop account: ERROR - " & errMsg
+	end try
+
+	try
+		set defAcct to default account
+		set end of diag to "default account: " & (name of defAcct)
+	on error errMsg
+		set end of diag to "default account: ERROR - " & errMsg
+	end try
+
+	try
+		set directUnread to (messages of inbox whose is read is false)
+		set end of diag to "direct inbox unread count: " & (count of directUnread)
+		repeat with m in directUnread
+			set end of diag to "  - " & (subject of m)
+		end repeat
+	on error errMsg
+		set end of diag to "direct inbox: ERROR - " & errMsg
+	end try
 
 	set AppleScript's text item delimiters to linefeed
-	set outputText to outputLines as text
+	set diagText to diag as text
 	set AppleScript's text item delimiters to ""
-	return outputText
+	return diagText
 end tell

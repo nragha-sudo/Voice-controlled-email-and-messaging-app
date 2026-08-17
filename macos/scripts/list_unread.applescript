@@ -1,47 +1,42 @@
--- Diagnostic v2, read-only. Tests several ways of reaching unread mail and
--- reports the real error for each instead of silently swallowing it, since
--- v1 (all three account-type queries returning empty with no visible error)
--- didn't tell us whether that's a real empty result or a masked failure.
+-- Diagnostic v3, read-only. exchange/imap/pop account queries all returned
+-- 0 with no error, and default account is literally missing value — the
+-- accounts on this machine (modern OAuth sign-ins) aren't represented via
+-- AppleScript's classic account model at all. Testing whether "messages"
+-- and "incoming messages", both listed as elements directly on the
+-- application class itself (independent of any account/inbox concept),
+-- can reach mail anyway.
 
 tell application "Microsoft Outlook"
 	set diag to {}
 
 	try
-		set exAccts to every exchange account
-		set end of diag to "exchange account: " & (count of exAccts) & " found"
-	on error errMsg
-		set end of diag to "exchange account: ERROR - " & errMsg
-	end try
-
-	try
-		set imapAccts to every imap account
-		set end of diag to "imap account: " & (count of imapAccts) & " found"
-	on error errMsg
-		set end of diag to "imap account: ERROR - " & errMsg
-	end try
-
-	try
-		set popAccts to every pop account
-		set end of diag to "pop account: " & (count of popAccts) & " found"
-	on error errMsg
-		set end of diag to "pop account: ERROR - " & errMsg
-	end try
-
-	try
-		set defAcct to default account
-		set end of diag to "default account: " & (name of defAcct)
-	on error errMsg
-		set end of diag to "default account: ERROR - " & errMsg
-	end try
-
-	try
-		set directUnread to (messages of inbox whose is read is false)
-		set end of diag to "direct inbox unread count: " & (count of directUnread)
-		repeat with m in directUnread
+		set allMsgs to (every message whose is read is false)
+		set end of diag to "bare messages unread count: " & (count of allMsgs)
+		repeat with m in allMsgs
 			set end of diag to "  - " & (subject of m)
 		end repeat
 	on error errMsg
-		set end of diag to "direct inbox: ERROR - " & errMsg
+		set end of diag to "bare messages: ERROR - " & errMsg
+	end try
+
+	try
+		set incMsgs to (every incoming message whose is read is false)
+		set end of diag to "incoming messages unread count: " & (count of incMsgs)
+		repeat with m in incMsgs
+			set end of diag to "  - " & (subject of m)
+		end repeat
+	on error errMsg
+		set end of diag to "incoming messages: ERROR - " & errMsg
+	end try
+
+	try
+		set allFolders to every mail folder
+		set end of diag to "mail folder count: " & (count of allFolders)
+		repeat with f in allFolders
+			set end of diag to "  - folder: " & (name of f)
+		end repeat
+	on error errMsg
+		set end of diag to "mail folder: ERROR - " & errMsg
 	end try
 
 	set AppleScript's text item delimiters to linefeed

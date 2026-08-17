@@ -44,11 +44,14 @@ on run
 		end tell
 	end tell
 
-	say (((count of inboxRows) as text) & " inboxes found with unread mail.")
-
-	repeat with inboxRow in inboxRows
-		my readInbox(inboxRow)
-	end repeat
+	-- Only the first matching Inbox row is processed (the IBM/work
+	-- account, based on its position above the Gmail account in the
+	-- sidebar) -- Gmail is intentionally skipped per request.
+	if (count of inboxRows) > 0 then
+		my readInbox(item 1 of inboxRows)
+	else
+		say "No inbox with unread mail was found."
+	end if
 
 	say "Done reading unread messages."
 end run

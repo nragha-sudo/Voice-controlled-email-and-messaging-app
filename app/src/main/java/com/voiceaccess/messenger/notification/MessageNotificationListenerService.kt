@@ -3,6 +3,7 @@ package com.voiceaccess.messenger.notification
 import android.app.Notification
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.voiceaccess.messenger.data.MessageRepository
 import com.voiceaccess.messenger.data.SourceApp
@@ -36,15 +37,32 @@ class MessageNotificationListenerService : NotificationListenerService() {
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
-        val sourceApp = SourceApp.fromPackageName(sbn.packageName) ?: return
+        // SourceApp.fromPackageName only matches the official Outlook package
+        // ("com.microsoft.office.outlook") and WhatsApp's two packages — Gmail
+        // ("com.google.android.gm") and everything else falls through to null
+        // and is dropped right here, before it ever reaches Room. Logged so
+        // this is verifiable via `adb logcat -s VAM-NotificationListener`
+        // instead of just asserted.
+        val sourceApp = SourceApp.fromPackageName(sbn.packageName)
+        if (sourceApp == null) {
+            Log.d(TAG, "Ignoring notification from ${sbn.packageName} (not Outlook/WhatsApp)")
+            return
+        }
 
         // Group summary notifications ("3 new messages") duplicate the
         // individual message notifications that also get posted; skip them.
-        if (sbn.notification.flags and Notification.FLAG_GROUP_SUMMARY != 0) return
+        if (sbn.notification.flags and Notification.FLAG_GROUP_SUMMARY != 0) {
+            Log.d(TAG, "Ignoring group summary notification from ${sbn.packageName}")
+            return
+        }
 
-        val (sender, previewText) = extractSenderAndText(sbn.notification) ?: return
+        val (sender, previewText) = extractSenderAndText(sbn.notification) ?: run {
+            Log.w(TAG, "Could not extract sender/text from ${sourceApp.displayName} notification, dropping it")
+            return
+        }
         val timestamp = sbn.notification.`when`.takeIf { it > 0 } ?: sbn.postTime
 
+        Log.d(TAG, "Queuing ${sourceApp.displayName} message from \"$sender\" (key=${sbn.key})")
         serviceScope.launch {
             repository.enqueue(
                 sourceApp = sourceApp,
@@ -86,5 +104,9 @@ class MessageNotificationListenerService : NotificationListenerService() {
         val text = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString()
             ?.takeIf { it.isNotBlank() } ?: return null
         return title to text
+    }
+
+    private companion object {
+        private const val TAG = "VAM-NotificationListener"
     }
 }

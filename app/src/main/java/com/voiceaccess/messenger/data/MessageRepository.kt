@@ -16,7 +16,13 @@ class MessageRepository(context: Context) {
 
     fun observeUnreadCount(): Flow<Int> = dao.observeUnreadCount()
 
-    suspend fun getUnread(): List<MessageEntity> = dao.getUnread()
+    /** Per-app unread badge count, e.g. for the Outlook/WhatsApp buttons; null means combined. */
+    fun observeUnreadCount(app: SourceApp?): Flow<Int> =
+        if (app == null) dao.observeUnreadCount() else dao.observeUnreadCountByApp(app)
+
+    /** [app] null reads the combined queue (used by the generic "read my messages" voice phrase). */
+    suspend fun getUnread(app: SourceApp? = null): List<MessageEntity> =
+        if (app == null) dao.getUnread() else dao.getUnreadByApp(app)
 
     suspend fun markReadAloud(id: Long) = dao.markReadAloud(id)
 

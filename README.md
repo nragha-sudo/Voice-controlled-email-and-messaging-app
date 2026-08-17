@@ -8,12 +8,16 @@ screen readers use.
 
 Three voice commands, working identically across both apps:
 
-- **Read my messages** — reads every unread queued message aloud, oldest
-  first, and offers to reply after each one.
+- **Read my Outlook / WhatsApp messages** — two separate buttons (or "read
+  outlook/whatsapp messages" by voice) each read that app's unread queue
+  only, oldest first. After every message it listens for a spoken
+  instruction: **reply** captures and sends a spoken reply, **done** marks
+  the message read (removed from the queue), **skip** (or no input within
+  the listening window) leaves it unread so it's read again next time.
 - **Search `<keywords>`** — opens the target app's search UI, types the
   keywords, and reads back a summary of matches.
 - **Reply** — after a message is read aloud, capture a spoken reply and send
-  it in that conversation.
+  it in that conversation; a successful send also marks the message done.
 
 ## Architecture
 
@@ -49,10 +53,27 @@ The app is four pieces, built in this order (see the commit history):
 4. **`voice/` + `controller/` + `ui/`** — `TextToSpeechManager` and
    `SpeechToTextManager` are coroutine wrappers around Android's TTS and
    `SpeechRecognizer`. `VoiceAssistantController` is the single orchestrator:
-   it queries the queue, drives the accessibility service, speaks results,
-   and listens for a reply. `MainActivity` exposes a "Read My Messages"
-   button and a tap-then-speak voice command button that parses phrases like
-   "read my messages" / "search whatsapp for invoice".
+   it queries the queue (optionally filtered to one `SourceApp`), drives the
+   accessibility service, speaks results, and blocks on a real listen window
+   for reply/skip/done after each message. `MainActivity` exposes separate
+   **Outlook** and **WhatsApp** read buttons plus a tap-then-speak voice
+   command button that parses phrases like "read outlook messages" /
+   "search whatsapp for invoice".
+
+### Debugging with logcat
+
+Every non-UI piece logs under a per-class tag, so you can watch exactly which
+selector/fallback path fires without attaching a debugger:
+
+```
+adb logcat -s VAM-NotificationListener VAM-Accessibility VAM-Controller
+```
+
+`VAM-Accessibility` is the most useful one when a read/search/reply flow
+isn't finding the right screen element — it logs whether each lookup hit via
+`AppUiConfig`'s resource IDs or fell back to text/content-description
+matching (a `Log.w` fallback line is your cue that `AppUiConfig` needs a real
+ID from Layout Inspector).
 
 ## Setup
 

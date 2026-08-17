@@ -18,11 +18,17 @@ interface MessageDao {
     @Query("SELECT * FROM message_queue WHERE read_aloud = 0 ORDER BY timestamp ASC")
     suspend fun getUnread(): List<MessageEntity>
 
+    @Query("SELECT * FROM message_queue WHERE read_aloud = 0 AND source_app = :sourceApp ORDER BY timestamp ASC")
+    suspend fun getUnreadByApp(sourceApp: SourceApp): List<MessageEntity>
+
     @Query("SELECT * FROM message_queue WHERE read_aloud = 0 ORDER BY timestamp ASC")
     fun observeUnread(): Flow<List<MessageEntity>>
 
     @Query("SELECT COUNT(*) FROM message_queue WHERE read_aloud = 0")
     fun observeUnreadCount(): Flow<Int>
+
+    @Query("SELECT COUNT(*) FROM message_queue WHERE read_aloud = 0 AND source_app = :sourceApp")
+    fun observeUnreadCountByApp(sourceApp: SourceApp): Flow<Int>
 
     @Query("UPDATE message_queue SET read_aloud = 1 WHERE id = :id")
     suspend fun markReadAloud(id: Long)

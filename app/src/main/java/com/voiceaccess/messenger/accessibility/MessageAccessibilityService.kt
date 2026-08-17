@@ -6,6 +6,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.provider.Settings
+import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import com.voiceaccess.messenger.data.MessageEntity
@@ -90,17 +91,24 @@ class MessageAccessibilityService : AccessibilityService() {
      * Returns the root node of that window, or null on timeout/failure.
      */
     private suspend fun launchAndWaitForForeground(app: SourceApp): AccessibilityNodeInfo? {
-        val launchIntent = packageManager.getLaunchIntentForPackage(app.packageName) ?: return null
+        val launchIntent = packageManager.getLaunchIntentForPackage(app.packageName)
+        if (launchIntent == null) {
+            Log.w(TAG, "launchAndWaitForForeground: no launch intent for ${app.packageName} — is it installed?")
+            return null
+        }
         launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
 
         awaitedPackage = app.packageName
         pendingWindowSignal = CompletableDeferred()
         startActivity(launchIntent)
 
-        withTimeoutOrNull(COLD_START_TIMEOUT_MS) { pendingWindowSignal?.await() }
+        val signaled = withTimeoutOrNull(COLD_START_TIMEOUT_MS) { pendingWindowSignal?.await() } != null
         awaitedPackage = null
+        Log.d(TAG, "launchAndWaitForForeground(${app.name}): window-changed event received=$signaled")
 
-        return pollForRoot(app.packageName, ROOT_POLL_TIMEOUT_MS)
+        val root = pollForRoot(app.packageName, ROOT_POLL_TIMEOUT_MS)
+        Log.d(TAG, "launchAndWaitForForeground(${app.name}): root found=${root != null}")
+        return root
     }
 
     /** Polls [rootInActiveWindow] until it belongs to [packageName] or the timeout elapses. */
@@ -114,12 +122,13 @@ class MessageAccessibilityService : AccessibilityService() {
         return null
     }
 
-    /** Suspends until [packageName]'s window fires a state/content-changed event, or times out. */
-    private suspend fun waitForWindowUpdate(packageName: String, timeoutMs: Long) {
+    /** Suspends until [packageName]'s window fires a state/content-changed event, or times out. Returns whether it signaled in time. */
+    private suspend fun waitForWindowUpdate(packageName: String, timeoutMs: Long): Boolean {
         awaitedPackage = packageName
         pendingWindowSignal = CompletableDeferred()
-        withTimeoutOrNull(timeoutMs) { pendingWindowSignal?.await() }
+        val signaled = withTimeoutOrNull(timeoutMs) { pendingWindowSignal?.await() } != null
         awaitedPackage = null
+        return signaled
     }
 
     /**
@@ -136,17 +145,29 @@ class MessageAccessibilityService : AccessibilityService() {
             val root = rootInActiveWindow ?: return null
             val candidateRows = NodeTreeUtils.findAllByViewIdAny(root, selectors.listItemContainerIds)
             candidateRows.firstOrNull { row -> row.text?.toString()?.contains(sender, true) == true }
-                ?.let { return it }
-            return NodeTreeUtils.findFirstByTextContains(root, sender)
+                ?.let {
+                    Log.d(TAG, "findConversationRow(${app.name}): matched sender \"$sender\" via listItemContainerIds")
+                    return it
+                }
+            return NodeTreeUtils.findFirstByTextContains(root, sender)?.also {
+                Log.w(TAG, "findConversationRow(${app.name}): listItemContainerIds found ${candidateRows.size} rows " +
+                    "but none matched \"$sender\" by exact row text — used the text-contains fallback instead. " +
+                    "If this keeps happening, AppUiConfig.listItemContainerIds for ${app.name} is probably stale.")
+            }
         }
 
         searchCurrentRoot()?.let { return it }
 
+        Log.d(TAG, "findConversationRow(${app.name}): not found on current screen, trying back-navigation once")
         performGlobalAction(GLOBAL_ACTION_BACK)
         waitForWindowUpdate(app.packageName, BACK_NAV_TIMEOUT_MS)
         delay(selectors.settleDelayMs)
 
-        return searchCurrentRoot()
+        val row = searchCurrentRoot()
+        if (row == null) {
+            Log.e(TAG, "findConversationRow(${app.name}): still not found for sender \"$sender\" after back-navigation retry")
+        }
+        return row
     }
 
     /**
@@ -158,19 +179,47 @@ class MessageAccessibilityService : AccessibilityService() {
     suspend fun openAndReadMessage(message: MessageEntity): String? = actionMutex.withLock {
         val app = message.sourceApp
         val selectors = AppUiConfig.forApp(app)
+        Log.d(TAG, "openAndReadMessage: id=${message.id} app=${app.name} sender=\"${message.sender}\"")
 
-        launchAndWaitForForeground(app) ?: return@withLock null
+        if (launchAndWaitForForeground(app) == null) {
+            Log.e(TAG, "openAndReadMessage: id=${message.id} aborted — could not bring ${app.name} to the foreground")
+            return@withLock null
+        }
 
-        val row = findConversationRow(app, message.sender, selectors) ?: return@withLock null
-        if (!NodeTreeUtils.click(row)) return@withLock null
+        val row = findConversationRow(app, message.sender, selectors)
+        if (row == null) {
+            Log.e(TAG, "openAndReadMessage: id=${message.id} aborted — no list row matched sender \"${message.sender}\"")
+            return@withLock null
+        }
+        if (!NodeTreeUtils.click(row)) {
+            Log.e(TAG, "openAndReadMessage: id=${message.id} aborted — matched row was not clickable")
+            return@withLock null
+        }
 
-        waitForWindowUpdate(app.packageName, DETAIL_OPEN_TIMEOUT_MS)
+        val opened = waitForWindowUpdate(app.packageName, DETAIL_OPEN_TIMEOUT_MS)
+        Log.d(TAG, "openAndReadMessage: id=${message.id} detail-screen window-changed event received=$opened")
         delay(selectors.settleDelayMs)
 
-        val detailRoot = pollForRoot(app.packageName, ROOT_POLL_TIMEOUT_MS) ?: return@withLock null
+        val detailRoot = pollForRoot(app.packageName, ROOT_POLL_TIMEOUT_MS)
+        if (detailRoot == null) {
+            Log.e(TAG, "openAndReadMessage: id=${message.id} aborted — no root node for ${app.packageName} after opening")
+            return@withLock null
+        }
+
         val bodyNode = NodeTreeUtils.findFirstByViewIdAny(detailRoot, selectors.messageBodyIds)
-        val scraped = bodyNode?.let { NodeTreeUtils.collectVisibleText(it) }
-            ?: NodeTreeUtils.collectVisibleText(detailRoot)
+        val scraped = if (bodyNode != null) {
+            Log.d(TAG, "openAndReadMessage: id=${message.id} body container matched via messageBodyIds")
+            NodeTreeUtils.collectVisibleText(bodyNode)
+        } else {
+            Log.w(TAG, "openAndReadMessage: id=${message.id} none of AppUiConfig's messageBodyIds " +
+                "(${selectors.messageBodyIds}) matched for ${app.name} — falling back to scraping the whole " +
+                "screen. This is the low-confidence path; if the read-out text includes toolbar/nav clutter, " +
+                "re-inspect the real body container's resource-id and add it to AppUiConfig.")
+            NodeTreeUtils.collectVisibleText(detailRoot)
+        }
+
+        Log.d(TAG, "openAndReadMessage: id=${message.id} scraped ${scraped.length} chars " +
+            "(preview: \"${scraped.take(80)}${if (scraped.length > 80) "…" else ""}\")")
 
         scraped.takeIf { it.isNotBlank() }
     }
@@ -184,11 +233,17 @@ class MessageAccessibilityService : AccessibilityService() {
      */
     suspend fun performSearch(app: SourceApp, keywords: String): List<String> = actionMutex.withLock {
         val selectors = AppUiConfig.forApp(app)
+        Log.d(TAG, "performSearch: app=${app.name} keywords=\"$keywords\"")
         val listRoot = launchAndWaitForForeground(app) ?: return@withLock emptyList()
 
         val searchIcon = NodeTreeUtils.findFirstByViewIdAny(listRoot, selectors.searchIconIds)
-            ?: NodeTreeUtils.findFirstByContentDescriptionAny(listRoot, selectors.searchIconContentDescriptions)
-            ?: return@withLock emptyList()
+            ?: NodeTreeUtils.findFirstByContentDescriptionAny(listRoot, selectors.searchIconContentDescriptions).also {
+                if (it != null) Log.w(TAG, "performSearch: search icon found via content-description fallback, not searchIconIds")
+            }
+            ?: run {
+                Log.e(TAG, "performSearch: aborted — no search icon found for ${app.name}")
+                return@withLock emptyList()
+            }
         if (!NodeTreeUtils.click(searchIcon)) return@withLock emptyList()
 
         waitForWindowUpdate(app.packageName, DETAIL_OPEN_TIMEOUT_MS)
@@ -213,10 +268,13 @@ class MessageAccessibilityService : AccessibilityService() {
 
         val resultsRoot = pollForRoot(app.packageName, ROOT_POLL_TIMEOUT_MS) ?: return@withLock emptyList()
         val resultNodes = NodeTreeUtils.findAllByViewIdAny(resultsRoot, selectors.searchResultItemIds)
-        resultNodes
+        val results = resultNodes
             .mapNotNull { it.text?.toString()?.trim()?.takeIf(String::isNotEmpty) }
             .distinct()
             .take(MAX_SEARCH_RESULTS)
+        Log.d(TAG, "performSearch: app=${app.name} found ${results.size} result(s) via searchResultItemIds " +
+            "(${resultNodes.size} raw nodes matched before de-dup)")
+        results
     }
 
     /**
@@ -227,11 +285,16 @@ class MessageAccessibilityService : AccessibilityService() {
      */
     suspend fun sendReply(app: SourceApp, replyText: String): Boolean = actionMutex.withLock {
         val selectors = AppUiConfig.forApp(app)
-        var root = pollForRoot(app.packageName, ROOT_POLL_TIMEOUT_MS) ?: return@withLock false
+        Log.d(TAG, "sendReply: app=${app.name} replyLength=${replyText.length}")
+        var root = pollForRoot(app.packageName, ROOT_POLL_TIMEOUT_MS) ?: run {
+            Log.e(TAG, "sendReply: aborted — no root node for ${app.packageName}")
+            return@withLock false
+        }
 
         val replyOpenButton = NodeTreeUtils.findFirstByViewIdAny(root, selectors.replyOpenButtonIds)
             ?: NodeTreeUtils.findFirstByContentDescriptionAny(root, selectors.replyOpenButtonContentDescriptions)
         if (replyOpenButton != null) {
+            Log.d(TAG, "sendReply: opening compose editor via replyOpenButton for ${app.name}")
             NodeTreeUtils.click(replyOpenButton)
             waitForWindowUpdate(app.packageName, DETAIL_OPEN_TIMEOUT_MS)
             delay(selectors.settleDelayMs)
@@ -239,23 +302,39 @@ class MessageAccessibilityService : AccessibilityService() {
         }
 
         val replyField = NodeTreeUtils.findFirstByViewIdAny(root, selectors.replyFieldIds)
-            ?: NodeTreeUtils.findFirstByContentDescriptionAny(root, selectors.replyFieldContentDescriptions)
-            ?: return@withLock false
+            ?: NodeTreeUtils.findFirstByContentDescriptionAny(root, selectors.replyFieldContentDescriptions).also {
+                if (it != null) Log.w(TAG, "sendReply: reply field found via content-description fallback, not replyFieldIds")
+            }
+            ?: run {
+                Log.e(TAG, "sendReply: aborted — no reply field found for ${app.name}")
+                return@withLock false
+            }
 
         NodeTreeUtils.focus(replyField)
         NodeTreeUtils.click(replyField)
-        if (!NodeTreeUtils.setText(replyField, replyText)) return@withLock false
+        if (!NodeTreeUtils.setText(replyField, replyText)) {
+            Log.e(TAG, "sendReply: aborted — ACTION_SET_TEXT failed on reply field for ${app.name}")
+            return@withLock false
+        }
 
         delay(selectors.settleDelayMs)
         val refreshedRoot = pollForRoot(app.packageName, ROOT_POLL_TIMEOUT_MS) ?: root
         val sendButton = NodeTreeUtils.findFirstByViewIdAny(refreshedRoot, selectors.sendButtonIds)
             ?: NodeTreeUtils.findFirstByContentDescriptionAny(refreshedRoot, selectors.sendButtonContentDescriptions)
-            ?: return@withLock false
+            ?: run {
+                Log.e(TAG, "sendReply: aborted — no send button found for ${app.name}")
+                return@withLock false
+            }
 
-        NodeTreeUtils.click(sendButton)
+        val clicked = NodeTreeUtils.click(sendButton)
+        Log.d(TAG, "sendReply: app=${app.name} send button clicked=$clicked")
+        clicked
     }
 
     companion object {
+        /** Filter logcat with `adb logcat -s VAM-Accessibility` to see exactly which selector/fallback path fires. */
+        private const val TAG = "VAM-Accessibility"
+
         private const val MAX_SEARCH_RESULTS = 10
         private const val LIVE_FILTER_SETTLE_MS = 400L
         private const val WHATSAPP_BUSINESS_PACKAGE = "com.whatsapp.w4b"

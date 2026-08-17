@@ -17,23 +17,36 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.voiceaccess.messenger.R
 import com.voiceaccess.messenger.accessibility.MessageAccessibilityService
+import com.voiceaccess.messenger.data.SourceApp
 import com.voiceaccess.messenger.databinding.ActivityMainBinding
 import kotlinx.coroutines.launch
 
 /**
- * The app's single screen and single voice trigger surface: a
- * "Read My Messages" button, a tap-then-speak voice-command button (covers
- * phrases like "read my messages" / "search whatsapp for invoice"), and a
- * typed search fallback for testing without a microphone.
+ * The app's single screen: separate Outlook and WhatsApp read buttons (each
+ * filters the queue to that app only), a tap-then-speak voice-command button
+ * (covers phrases like "read my messages" / "search whatsapp for invoice"),
+ * and a typed search fallback for testing without a microphone.
  */
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
     private val viewModel: MainViewModel by viewModels()
 
+    /**
+     * Every entry point that can end up listening for speech (both read
+     * buttons — they listen for reply/skip/done after each message — and the
+     * voice-command button) must request RECORD_AUDIO *before* starting,
+     * not just the voice-command button. Without this, SpeechRecognizer
+     * fails instantly instead of actually listening, which looks like "the
+     * app doesn't pause to listen at all."
+     */
+    private var pendingMicAction: (() -> Unit)? = null
+
     private val requestMicPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-            if (granted) launchVoiceCommandRecognizer()
+            val action = pendingMicAction
+            pendingMicAction = null
+            if (granted) action?.invoke()
         }
 
     private val voiceCommandRecognizer =
@@ -49,8 +62,15 @@ class MainActivity : AppCompatActivity() {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        binding.btnReadMessages.setOnClickListener { viewModel.controller.readUnreadMessages() }
-        binding.btnVoiceCommand.setOnClickListener { onVoiceCommandTapped() }
+        binding.btnReadOutlook.setOnClickListener {
+            withMicPermission { viewModel.controller.readUnreadMessages(SourceApp.OUTLOOK) }
+        }
+        binding.btnReadWhatsapp.setOnClickListener {
+            withMicPermission { viewModel.controller.readUnreadMessages(SourceApp.WHATSAPP) }
+        }
+        binding.btnVoiceCommand.setOnClickListener {
+            withMicPermission { launchVoiceCommandRecognizer() }
+        }
         binding.btnSearch.setOnClickListener {
             val keywords = binding.editSearchKeywords.text?.toString().orEmpty()
             viewModel.controller.search(app = null, keywords = keywords)
@@ -65,6 +85,16 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
                 launch {
+                    viewModel.outlookUnreadCount.collect {
+                        binding.textUnreadOutlook.text = getString(R.string.label_unread_count_short, it)
+                    }
+                }
+                launch {
+                    viewModel.whatsappUnreadCount.collect {
+                        binding.textUnreadWhatsapp.text = getString(R.string.label_unread_count_short, it)
+                    }
+                }
+                launch {
                     viewModel.status.collect { binding.textStatus.text = it }
                 }
             }
@@ -76,12 +106,13 @@ class MainActivity : AppCompatActivity() {
         refreshPermissionBanner()
     }
 
-    private fun onVoiceCommandTapped() {
+    private fun withMicPermission(action: () -> Unit) {
         val hasMicPermission = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) ==
             PackageManager.PERMISSION_GRANTED
         if (hasMicPermission) {
-            launchVoiceCommandRecognizer()
+            action()
         } else {
+            pendingMicAction = action
             requestMicPermission.launch(Manifest.permission.RECORD_AUDIO)
         }
     }

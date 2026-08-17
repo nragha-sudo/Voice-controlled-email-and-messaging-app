@@ -2,11 +2,13 @@
 <resources>
     <string name="app_name">Voice Access Messenger</string>
 
-    <string name="btn_read_messages">Read My Messages</string>
+    <string name="btn_read_outlook">Outlook</string>
+    <string name="btn_read_whatsapp">WhatsApp</string>
     <string name="btn_voice_command">Voice Command</string>
     <string name="btn_search">Search</string>
     <string name="hint_search">Search keywords…</string>
     <string name="label_unread_count">Unread: %1$d</string>
+    <string name="label_unread_count_short">%1$d unread</string>
 
     <string name="status_idle">Idle</string>
     <string name="status_notification_access_missing">Notification access is off — tap to enable</string>
@@ -15,7 +17,8 @@
 
     <string name="prompt_reply_or_next">Say reply, skip, or done.</string>
     <string name="prompt_say_reply">Go ahead, say your reply.</string>
-    <string name="reply_sent">Reply sent.</string>
-    <string name="reply_failed">Could not send the reply.</string>
+    <string name="marked_as_done">Marked as done.</string>
+    <string name="skipped_for_later">Skipped for later.</string>
+    <string name="stopping_read_aloud">Stopping.</string>
     <string name="no_unread_messages">You have no unread messages.</string>
 </resources>

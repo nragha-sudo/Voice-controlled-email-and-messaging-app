@@ -66,7 +66,7 @@ Every non-UI piece logs under a per-class tag, so you can watch exactly which
 selector/fallback path fires without attaching a debugger:
 
 ```
-adb logcat -s VAM-NotificationListener VAM-Accessibility VAM-Controller
+adb logcat -s VAM-NotificationListener VAM-Accessibility VAM-Controller VAM-SpeechToText VAM-Contacts
 ```
 
 `VAM-Accessibility` is the most useful one when a read/search/reply flow
@@ -74,6 +74,29 @@ isn't finding the right screen element — it logs whether each lookup hit via
 `AppUiConfig`'s resource IDs or fell back to text/content-description
 matching (a `Log.w` fallback line is your cue that `AppUiConfig` needs a real
 ID from Layout Inspector).
+
+`VAM-SpeechToText` is the one to check when "reply/skip/done" doesn't seem to
+be listening — it logs every stage of a listen attempt (`onReadyForSpeech`,
+`onBeginningOfSpeech`, the decoded `onError` reason, the raw `onResults`
+transcript) instead of silently swallowing failures, so you can tell apart:
+mic permission missing (`ERROR_INSUFFICIENT_PERMISSIONS`), no recognizer
+available on the device at all (logged before even trying), the mic opened
+but heard nothing (`ERROR_SPEECH_TIMEOUT`), heard something but couldn't
+transcribe it (`ERROR_NO_MATCH`), or it transcribed something that just
+didn't contain "reply"/"skip"/"done" (visible in the `onResults` line, and
+in `VAM-Controller`'s `heard instruction="..."` line).
+
+### Speech recognition biasing toward contact names
+
+Uncommon names (e.g. names ASR wasn't trained on) tend to get mis-transcribed
+by the generic language model. If READ_CONTACTS is granted, every listen
+attempt — the voice-command recognizer, the reply/skip/done prompt, and reply
+dictation — passes the device's contact display names as recognizer
+"biasing" hints (`RecognizerIntent.EXTRA_BIASING_STRINGS`, read by
+`voice/ContactsProvider`). This is entirely optional: declining the
+permission just means recognition falls back to the plain language model,
+nothing else breaks. Support for this extra varies by recognizer
+implementation/OS version — it's a hint, not a guarantee.
 
 ## Setup
 
@@ -88,8 +111,12 @@ ID from Layout Inspector).
    - **Accessibility service** — required for reading full content, search,
      and reply. Deep-links to `Settings > Accessibility > Downloaded apps >
      Voice Access Messenger`.
-   - **Microphone** — requested at runtime the first time you tap the voice
-     command button; needed for both command capture and reply dictation.
+   - **Microphone** — requested at runtime the first time you tap either read
+     button or the voice command button; needed for command capture,
+     reply/skip/done listening, and reply dictation.
+   - **Contacts** (optional) — requested alongside the microphone. Declining
+     it is fine; it's only used to bias speech recognition toward contact
+     names (see below) and nothing else depends on it.
 
 ## Updating UI selectors after an app update
 
@@ -138,3 +165,4 @@ drift across app updates. When a flow stops finding an element:
 | `BIND_ACCESSIBILITY_SERVICE` (system-granted after user opts in) | Read full content, search, reply |
 | `RECORD_AUDIO` | Voice command capture, reply dictation |
 | `INTERNET` | `SpeechRecognizer` may use a network recognition backend |
+| `READ_CONTACTS` (optional) | Biases speech recognition toward contact names |

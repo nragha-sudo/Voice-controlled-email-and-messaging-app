@@ -8,6 +8,12 @@
     <!-- SpeechRecognizer may fall back to a network recognition service. -->
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- Optional: lets speech recognition "bias" toward contact names (see
+         RecognizerIntent.EXTRA_BIASING_STRINGS) so uncommon names transcribe
+         correctly. The app works without this permission — biasing is just
+         skipped and recognition falls back to the plain language model. -->
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
+
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"

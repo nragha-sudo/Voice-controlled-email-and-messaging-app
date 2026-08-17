@@ -21,6 +21,7 @@ import com.voiceaccess.messenger.R
 import com.voiceaccess.messenger.accessibility.MessageAccessibilityService
 import com.voiceaccess.messenger.data.SourceApp
 import com.voiceaccess.messenger.databinding.ActivityMainBinding
+import com.voiceaccess.messenger.voice.ContactsProvider
 import kotlinx.coroutines.launch
 
 /**
@@ -40,15 +41,17 @@ class MainActivity : AppCompatActivity() {
      * voice-command button) must request RECORD_AUDIO *before* starting,
      * not just the voice-command button. Without this, SpeechRecognizer
      * fails instantly instead of actually listening, which looks like "the
-     * app doesn't pause to listen at all."
+     * app doesn't pause to listen at all." READ_CONTACTS is requested
+     * alongside it (but never blocks the action if declined) so speech
+     * recognition can bias toward contact names.
      */
     private var pendingMicAction: (() -> Unit)? = null
 
-    private val requestMicPermission =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+    private val requestVoicePermissions =
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { results ->
             val action = pendingMicAction
             pendingMicAction = null
-            if (granted) action?.invoke()
+            if (results[Manifest.permission.RECORD_AUDIO] == true) action?.invoke()
         }
 
     private val voiceCommandRecognizer =
@@ -110,15 +113,30 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun withMicPermission(action: () -> Unit) {
-        val hasMicPermission = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) ==
-            PackageManager.PERMISSION_GRANTED
-        if (hasMicPermission) {
+        val micGranted = hasPermission(Manifest.permission.RECORD_AUDIO)
+        val contactsGranted = hasPermission(Manifest.permission.READ_CONTACTS)
+
+        if (micGranted) {
             action()
-        } else {
-            pendingMicAction = action
-            requestMicPermission.launch(Manifest.permission.RECORD_AUDIO)
+            if (!contactsGranted) {
+                // Opportunistic ask for name-biasing accuracy; never blocks this action.
+                pendingMicAction = null
+                requestVoicePermissions.launch(arrayOf(Manifest.permission.READ_CONTACTS))
+            }
+            return
         }
+
+        pendingMicAction = action
+        val permissions = if (contactsGranted) {
+            arrayOf(Manifest.permission.RECORD_AUDIO)
+        } else {
+            arrayOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.READ_CONTACTS)
+        }
+        requestVoicePermissions.launch(permissions)
     }
+
+    private fun hasPermission(permission: String): Boolean =
+        ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
 
     /** Destructive/debug action — confirm before wiping the local queue. */
     private fun confirmClearQueue() {
@@ -134,9 +152,17 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun launchVoiceCommandRecognizer() {
+        val biasingNames = if (hasPermission(Manifest.permission.READ_CONTACTS)) {
+            ContactsProvider.loadDisplayNames(this)
+        } else {
+            emptyList()
+        }
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
             putExtra(RecognizerIntent.EXTRA_PROMPT, getString(R.string.btn_voice_command))
+            if (biasingNames.isNotEmpty()) {
+                putStringArrayListExtra(ContactsProvider.EXTRA_BIASING_STRINGS, ArrayList(biasingNames))
+            }
         }
         runCatching { voiceCommandRecognizer.launch(intent) }
     }

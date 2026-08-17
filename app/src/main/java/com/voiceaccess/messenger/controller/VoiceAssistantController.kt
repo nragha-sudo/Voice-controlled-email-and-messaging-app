@@ -9,6 +9,7 @@ import com.voiceaccess.messenger.R
 import com.voiceaccess.messenger.accessibility.MessageAccessibilityService
 import com.voiceaccess.messenger.data.MessageRepository
 import com.voiceaccess.messenger.data.SourceApp
+import com.voiceaccess.messenger.voice.ContactsProvider
 import com.voiceaccess.messenger.voice.SpeechToTextManager
 import com.voiceaccess.messenger.voice.TextToSpeechManager
 import kotlinx.coroutines.CoroutineScope
@@ -99,6 +100,14 @@ class VoiceAssistantController(
         ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
             PackageManager.PERMISSION_GRANTED
 
+    private fun hasContactsPermission(): Boolean =
+        ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) ==
+            PackageManager.PERMISSION_GRANTED
+
+    /** Contact names to bias speech recognition toward (e.g. so "Sruthikutti" transcribes correctly). */
+    private fun loadBiasingNames(): List<String> =
+        if (hasContactsPermission()) ContactsProvider.loadDisplayNames(context) else emptyList()
+
     private suspend fun runReadUnreadMessages(app: SourceApp?) {
         val unread = repository.getUnread(app)
         Log.d(TAG, "runReadUnreadMessages(${app?.name}): ${unread.size} unread message(s)")
@@ -120,6 +129,9 @@ class VoiceAssistantController(
                 "accessibilityServiceEnabled=${accessibility != null} micPermissionGranted=${hasRecordAudioPermission()}. " +
                 "Every message this run will be left unread (treated as skipped).")
         }
+        // Loaded once per run rather than per message — a full contacts
+        // query for every listenOnce() call would be wasteful.
+        val biasingNames = loadBiasingNames()
 
         for (message in unread) {
             _status.value = "Reading ${message.sourceApp.displayName} message from ${message.sender}…"
@@ -142,7 +154,7 @@ class VoiceAssistantController(
             }
 
             tts.speak(context.getString(R.string.prompt_reply_or_next))
-            val instruction = stt.listenOnce(timeoutMs = LISTEN_WINDOW_MS)?.lowercase()
+            val instruction = stt.listenOnce(timeoutMs = LISTEN_WINDOW_MS, biasingStrings = biasingNames)?.lowercase()
             Log.d(TAG, "runReadUnreadMessages: id=${message.id} heard instruction=\"$instruction\"")
 
             when {
@@ -157,7 +169,7 @@ class VoiceAssistantController(
                     return
                 }
                 instruction.contains("reply") -> {
-                    val sent = handleSpokenReply(accessibility, message.sourceApp)
+                    val sent = handleSpokenReply(accessibility, message.sourceApp, biasingNames)
                     if (sent) {
                         repository.markReadAloud(message.id)
                         tts.speak(context.getString(R.string.marked_as_done))
@@ -183,9 +195,13 @@ class VoiceAssistantController(
     }
 
     /** Returns true only if a reply was actually captured and sent — callers decide skip vs done from that. */
-    private suspend fun handleSpokenReply(accessibility: MessageAccessibilityService, app: SourceApp): Boolean {
+    private suspend fun handleSpokenReply(
+        accessibility: MessageAccessibilityService,
+        app: SourceApp,
+        biasingNames: List<String>,
+    ): Boolean {
         tts.speak(context.getString(R.string.prompt_say_reply))
-        val replyText = stt.listenOnce(timeoutMs = REPLY_CAPTURE_TIMEOUT_MS)
+        val replyText = stt.listenOnce(timeoutMs = REPLY_CAPTURE_TIMEOUT_MS, biasingStrings = biasingNames)
         if (replyText.isNullOrBlank()) {
             Log.d(TAG, "handleSpokenReply: no reply captured within timeout")
             return false

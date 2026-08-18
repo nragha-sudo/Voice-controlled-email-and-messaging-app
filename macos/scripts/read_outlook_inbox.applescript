@@ -8,10 +8,17 @@
 -- at all -- confirmed via direct testing, not assumed.
 --
 -- IMPORTANT: never store "front window" (or any window) in a variable and
--- use it later -- confirmed via repeated "Can't get window ..." errors
--- that the reference goes stale within a fraction of a second, even
--- across two adjacent statements. Always reference "front window" literally,
--- inline, in the same tell block as the work that uses it.
+-- use it later -- always reference "front window" literally, inline, in
+-- the same tell block as the work that uses it.
+--
+-- IMPORTANT: do NOT click into the Inbox row before reading. Confirmed
+-- (diagnose_outlook_ui.applescript) that the front window is already
+-- titled "Inbox • <account>" by default -- Inbox is already the active
+-- folder. Clicking it anyway reliably breaks every subsequent window
+-- lookup with "Can't get window ..." regardless of how the window is
+-- addressed or how long we wait afterward, so this version reads the
+-- message list straight from whatever's already on screen, and only
+-- falls back to clicking the sidebar row if that list isn't found.
 --
 -- v1 scope: reads the message-list row's own text (sender + subject +
 -- time + a preview snippet -- same text visible in the inbox list), which
@@ -37,22 +44,28 @@ on run
 		return
 	end if
 
+	-- Look for the sidebar and the message list in the same pass, without
+	-- clicking anything first.
 	set outlineEl to missing value
+	set msgTable to missing value
 	repeat 6 times
 		if my waitForWindow() then
 			try
 				with timeout of 60 seconds
 					tell application "System Events"
 						tell process "Microsoft Outlook"
-							set outlineEl to my findFirstByRole(front window, "AXOutline")
+							if outlineEl is missing value then
+								set outlineEl to my findFirstByRole(front window, "AXOutline")
+							end if
+							if msgTable is missing value then
+								set msgTable to my findTableByDesc(front window, "Message List")
+							end if
 						end tell
 					end tell
 				end timeout
-			on error
-				set outlineEl to missing value
 			end try
 		end if
-		if outlineEl is not missing value then exit repeat
+		if outlineEl is not missing value and msgTable is not missing value then exit repeat
 		delay 1
 	end repeat
 
@@ -98,14 +111,25 @@ on run
 		say ("First inbox found: " & firstDesc)
 	end if
 
-	-- Only the first matching Inbox row is processed (the IBM/work
-	-- account, based on its position above the Gmail account in the
-	-- sidebar) -- Gmail is intentionally skipped per request.
-	if (count of inboxRows) > 0 then
-		my readInbox(item 1 of inboxRows)
-	else
+	if (count of inboxRows) = 0 then
 		say "No inbox with unread mail was found."
+		say "Done reading unread messages."
+		return
 	end if
+
+	-- If the message list wasn't already on screen (e.g. Outlook opened to
+	-- a different folder), fall back to clicking the matching sidebar row.
+	if msgTable is missing value then
+		say "Message list wasn't already open. Clicking the inbox."
+		set msgTable to my clickIntoInboxAndFindTable(item 1 of inboxRows)
+	end if
+
+	if msgTable is missing value then
+		say "Could not find the message list. Stopping."
+		return
+	end if
+
+	my readMessages(msgTable)
 
 	say "Done reading unread messages."
 end run
@@ -148,7 +172,29 @@ on findFirstByRole(elem, targetRole)
 	return missing value
 end findFirstByRole
 
-on readInbox(inboxRow)
+on findTableByDesc(elem, targetDesc)
+	tell application "System Events"
+		set elemDesc to ""
+		try
+			set elemDesc to (description of elem) as text
+		end try
+		set elemRole to ""
+		try
+			set elemRole to (role of elem) as text
+		end try
+		if elemDesc is targetDesc and elemRole is "AXTable" then return elem
+		try
+			set kids to UI elements of elem
+			repeat with k in kids
+				set found to my findTableByDesc(k, targetDesc)
+				if found is not missing value then return found
+			end repeat
+		end try
+	end tell
+	return missing value
+end findTableByDesc
+
+on clickIntoInboxAndFindTable(inboxRow)
 	with timeout of 180 seconds
 		tell application "System Events"
 			tell process "Microsoft Outlook"
@@ -162,11 +208,6 @@ on readInbox(inboxRow)
 	end timeout
 	delay 3
 
-	-- Right after clicking a folder, Outlook's window can be mid-redraw
-	-- and briefly throw "Can't get window ..." no matter how the window
-	-- is addressed (confirmed: this happened with a stored reference, with
-	-- "window 1", and with inline "front window" alike). Retry the whole
-	-- lookup with backoff instead of assuming any fixed delay is enough.
 	set msgTable to missing value
 	repeat 6 times
 		if my waitForWindow() then
@@ -186,11 +227,10 @@ on readInbox(inboxRow)
 		delay 1
 	end repeat
 
-	if msgTable is missing value then
-		say "Could not find the message list. Stopping."
-		return
-	end if
+	return msgTable
+end clickIntoInboxAndFindTable
 
+on readMessages(msgTable)
 	set rowList to {}
 	with timeout of 180 seconds
 		tell application "System Events"
@@ -223,26 +263,4 @@ on readInbox(inboxRow)
 			say ("New message. " & rowDesc)
 		end if
 	end repeat
-end readInbox
-
-on findTableByDesc(elem, targetDesc)
-	tell application "System Events"
-		set elemDesc to ""
-		try
-			set elemDesc to (description of elem) as text
-		end try
-		set elemRole to ""
-		try
-			set elemRole to (role of elem) as text
-		end try
-		if elemDesc is targetDesc and elemRole is "AXTable" then return elem
-		try
-			set kids to UI elements of elem
-			repeat with k in kids
-				set found to my findTableByDesc(k, targetDesc)
-				if found is not missing value then return found
-			end repeat
-		end try
-	end tell
-	return missing value
-end findTableByDesc
+end readMessages

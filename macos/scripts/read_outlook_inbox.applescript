@@ -7,15 +7,15 @@
 -- classic scripting dictionary (exchange/imap/pop account) can't see them
 -- at all -- confirmed via direct testing, not assumed.
 --
--- IMPORTANT: this Outlook window's reference is unstable when addressed
--- by title ("front window") or by position ("window 1") -- confirmed
--- across many runs that "Can't get window ..." recurs no matter how long
--- we wait or how many times we retry, even for references used a split
--- second after being created. The fix is to stop addressing the window by
--- title/position entirely and use its numeric window id instead, which
--- does not change even if the title does:
---     set winID to id of front window   -- grab this ONCE
---     window id winID                    -- then always address it this way
+-- IMPORTANT: "id of front window" is not reliably supported for this
+-- window object (confirmed: failed 10/10 attempts within 5 seconds, not
+-- a timing pattern) -- back to addressing via "front window" inline,
+-- which DID reliably reach the sidebar/inbox-row stage in prior runs.
+--
+-- IMPORTANT: nothing in this script should crash to a silent Script
+-- Editor error dialog anymore. Every stage is wrapped so a failure
+-- SPEAKS the actual error text out loud via `say`, so whatever breaks
+-- next is diagnosable from what you hear, not from guessing.
 --
 -- v1 scope: reads the message-list row's own text (sender + subject +
 -- time + a preview snippet -- same text visible in the inbox list), which
@@ -33,11 +33,18 @@
 property maxMessagesPerAccount : 8
 
 on run
+	try
+		my mainFlow()
+	on error errMsg
+		say ("Top level error. " & errMsg)
+	end try
+end run
+
+on mainFlow()
 	tell application "Microsoft Outlook" to activate
 	delay 2
 
-	set winID to my getWindowID()
-	if winID is missing value then
+	if not (my waitForWindow()) then
 		say "Could not find an Outlook window. Stopping."
 		return
 	end if
@@ -50,14 +57,16 @@ on run
 				tell application "System Events"
 					tell process "Microsoft Outlook"
 						if outlineEl is missing value then
-							set outlineEl to my findFirstByRole(window id winID, "AXOutline")
+							set outlineEl to my findFirstByRole(front window, "AXOutline")
 						end if
 						if msgTable is missing value then
-							set msgTable to my findTableByDesc(window id winID, "Message List")
+							set msgTable to my findTableByDesc(front window, "Message List")
 						end if
 					end tell
 				end tell
 			end timeout
+		on error errMsg
+			say ("First pass attempt failed: " & errMsg)
 		end try
 		if outlineEl is not missing value and msgTable is not missing value then exit repeat
 		delay 1
@@ -66,6 +75,13 @@ on run
 	if outlineEl is missing value then
 		say "Could not find the folder sidebar. Stopping."
 		return
+	end if
+
+	say "Sidebar found."
+	if msgTable is not missing value then
+		say "Message list was already open too."
+	else
+		say "Message list was not already open."
 	end if
 
 	set inboxRows to {}
@@ -86,8 +102,6 @@ on run
 		end tell
 	end timeout
 
-	-- Diagnostic: speak what was actually found before doing anything else,
-	-- so a silent run and a wrong-account run are distinguishable out loud.
 	say (((count of inboxRows) as text) & " matching inbox rows found.")
 
 	if (count of inboxRows) > 0 then
@@ -112,8 +126,8 @@ on run
 	end if
 
 	if msgTable is missing value then
-		say "Message list wasn't already open. Clicking the inbox."
-		set msgTable to my clickIntoInboxAndFindTable(item 1 of inboxRows, winID)
+		say "Clicking the inbox now."
+		set msgTable to my clickIntoInboxAndFindTable(item 1 of inboxRows)
 	end if
 
 	if msgTable is missing value then
@@ -121,29 +135,32 @@ on run
 		return
 	end if
 
-	my readMessages(msgTable)
+	say "Message list located. Reading now."
+	try
+		my readMessages(msgTable)
+	on error errMsg
+		say ("Reading failed. " & errMsg)
+	end try
 
 	say "Done reading unread messages."
-end run
+end mainFlow
 
-on getWindowID()
-	set winID to missing value
+on waitForWindow()
 	repeat 10 times
 		with timeout of 30 seconds
 			tell application "System Events"
 				tell process "Microsoft Outlook"
 					set frontmost to true
 					try
-						if (count of windows) > 0 then set winID to (id of front window)
+						if (count of windows) > 0 then return true
 					end try
 				end tell
 			end tell
 		end timeout
-		if winID is not missing value then exit repeat
 		delay 0.5
 	end repeat
-	return winID
-end getWindowID
+	return false
+end waitForWindow
 
 on findFirstByRole(elem, targetRole)
 	tell application "System Events"
@@ -185,7 +202,7 @@ on findTableByDesc(elem, targetDesc)
 	return missing value
 end findTableByDesc
 
-on clickIntoInboxAndFindTable(inboxRow, winID)
+on clickIntoInboxAndFindTable(inboxRow)
 	with timeout of 180 seconds
 		tell application "System Events"
 			tell process "Microsoft Outlook"
@@ -205,10 +222,12 @@ on clickIntoInboxAndFindTable(inboxRow, winID)
 			with timeout of 60 seconds
 				tell application "System Events"
 					tell process "Microsoft Outlook"
-						set msgTable to my findTableByDesc(window id winID, "Message List")
+						set msgTable to my findTableByDesc(front window, "Message List")
 					end tell
 				end tell
 			end timeout
+		on error errMsg
+			say ("Post click attempt failed: " & errMsg)
 		end try
 		if msgTable is not missing value then exit repeat
 		delay 1
@@ -226,6 +245,8 @@ on readMessages(msgTable)
 			end tell
 		end tell
 	end timeout
+
+	say (((count of rowList) as text) & " rows in the message list.")
 
 	set readCount to 0
 	repeat with msgRow in rowList

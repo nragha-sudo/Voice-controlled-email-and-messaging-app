@@ -7,18 +7,15 @@
 -- classic scripting dictionary (exchange/imap/pop account) can't see them
 -- at all -- confirmed via direct testing, not assumed.
 --
--- IMPORTANT: never store "front window" (or any window) in a variable and
--- use it later -- always reference "front window" literally, inline, in
--- the same tell block as the work that uses it.
---
--- IMPORTANT: do NOT click into the Inbox row before reading. Confirmed
--- (diagnose_outlook_ui.applescript) that the front window is already
--- titled "Inbox • <account>" by default -- Inbox is already the active
--- folder. Clicking it anyway reliably breaks every subsequent window
--- lookup with "Can't get window ..." regardless of how the window is
--- addressed or how long we wait afterward, so this version reads the
--- message list straight from whatever's already on screen, and only
--- falls back to clicking the sidebar row if that list isn't found.
+-- IMPORTANT: this Outlook window's reference is unstable when addressed
+-- by title ("front window") or by position ("window 1") -- confirmed
+-- across many runs that "Can't get window ..." recurs no matter how long
+-- we wait or how many times we retry, even for references used a split
+-- second after being created. The fix is to stop addressing the window by
+-- title/position entirely and use its numeric window id instead, which
+-- does not change even if the title does:
+--     set winID to id of front window   -- grab this ONCE
+--     window id winID                    -- then always address it this way
 --
 -- v1 scope: reads the message-list row's own text (sender + subject +
 -- time + a preview snippet -- same text visible in the inbox list), which
@@ -39,32 +36,29 @@ on run
 	tell application "Microsoft Outlook" to activate
 	delay 2
 
-	if not (my waitForWindow()) then
+	set winID to my getWindowID()
+	if winID is missing value then
 		say "Could not find an Outlook window. Stopping."
 		return
 	end if
 
-	-- Look for the sidebar and the message list in the same pass, without
-	-- clicking anything first.
 	set outlineEl to missing value
 	set msgTable to missing value
 	repeat 6 times
-		if my waitForWindow() then
-			try
-				with timeout of 60 seconds
-					tell application "System Events"
-						tell process "Microsoft Outlook"
-							if outlineEl is missing value then
-								set outlineEl to my findFirstByRole(front window, "AXOutline")
-							end if
-							if msgTable is missing value then
-								set msgTable to my findTableByDesc(front window, "Message List")
-							end if
-						end tell
+		try
+			with timeout of 60 seconds
+				tell application "System Events"
+					tell process "Microsoft Outlook"
+						if outlineEl is missing value then
+							set outlineEl to my findFirstByRole(window id winID, "AXOutline")
+						end if
+						if msgTable is missing value then
+							set msgTable to my findTableByDesc(window id winID, "Message List")
+						end if
 					end tell
-				end timeout
-			end try
-		end if
+				end tell
+			end timeout
+		end try
 		if outlineEl is not missing value and msgTable is not missing value then exit repeat
 		delay 1
 	end repeat
@@ -117,11 +111,9 @@ on run
 		return
 	end if
 
-	-- If the message list wasn't already on screen (e.g. Outlook opened to
-	-- a different folder), fall back to clicking the matching sidebar row.
 	if msgTable is missing value then
 		say "Message list wasn't already open. Clicking the inbox."
-		set msgTable to my clickIntoInboxAndFindTable(item 1 of inboxRows)
+		set msgTable to my clickIntoInboxAndFindTable(item 1 of inboxRows, winID)
 	end if
 
 	if msgTable is missing value then
@@ -134,25 +126,24 @@ on run
 	say "Done reading unread messages."
 end run
 
-on waitForWindow()
-	-- Only checks that *a* window exists -- never captures or returns a
-	-- reference to it. Callers always address "front window" fresh, inline,
-	-- right where they use it.
+on getWindowID()
+	set winID to missing value
 	repeat 10 times
 		with timeout of 30 seconds
 			tell application "System Events"
 				tell process "Microsoft Outlook"
 					set frontmost to true
 					try
-						if (count of windows) > 0 then return true
+						if (count of windows) > 0 then set winID to (id of front window)
 					end try
 				end tell
 			end tell
 		end timeout
+		if winID is not missing value then exit repeat
 		delay 0.5
 	end repeat
-	return false
-end waitForWindow
+	return winID
+end getWindowID
 
 on findFirstByRole(elem, targetRole)
 	tell application "System Events"
@@ -194,7 +185,7 @@ on findTableByDesc(elem, targetDesc)
 	return missing value
 end findTableByDesc
 
-on clickIntoInboxAndFindTable(inboxRow)
+on clickIntoInboxAndFindTable(inboxRow, winID)
 	with timeout of 180 seconds
 		tell application "System Events"
 			tell process "Microsoft Outlook"
@@ -210,19 +201,15 @@ on clickIntoInboxAndFindTable(inboxRow)
 
 	set msgTable to missing value
 	repeat 6 times
-		if my waitForWindow() then
-			try
-				with timeout of 60 seconds
-					tell application "System Events"
-						tell process "Microsoft Outlook"
-							set msgTable to my findTableByDesc(front window, "Message List")
-						end tell
+		try
+			with timeout of 60 seconds
+				tell application "System Events"
+					tell process "Microsoft Outlook"
+						set msgTable to my findTableByDesc(window id winID, "Message List")
 					end tell
-				end timeout
-			on error
-				set msgTable to missing value
-			end try
-		end if
+				end tell
+			end timeout
+		end try
 		if msgTable is not missing value then exit repeat
 		delay 1
 	end repeat

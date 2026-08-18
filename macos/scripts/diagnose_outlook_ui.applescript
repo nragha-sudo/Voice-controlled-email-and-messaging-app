@@ -16,18 +16,49 @@ property outFile : (POSIX path of (path to desktop folder)) & "outlook_ui_dump.t
 
 on run
 	tell application "Microsoft Outlook" to activate
-	delay 1
+	delay 2
 
-	set dumpLines to {}
+	set winCount to 0
+	set win to missing value
 	with timeout of 180 seconds
 		tell application "System Events"
 			tell process "Microsoft Outlook"
 				set frontmost to true
-				set win to front window
-				set end of dumpLines to "WINDOW: " & (name of win)
-				my walk(win, 0, dumpLines)
+				try
+					set winCount to (count of windows)
+				end try
+				if winCount > 0 then
+					try
+						set win to front window
+					end try
+				end if
 			end tell
 		end tell
+	end timeout
+
+	say ("Process has " & (winCount as text) & " windows.")
+
+	if win is missing value then
+		say "No usable front window found. Stopping here."
+		return
+	end if
+
+	set winName to ""
+	with timeout of 30 seconds
+		tell application "System Events"
+			tell process "Microsoft Outlook"
+				try
+					set winName to (name of win) as text
+				end try
+			end tell
+		end tell
+	end timeout
+	say ("Front window is: " & winName)
+
+	set dumpLines to {}
+	set end of dumpLines to "WINDOW: " & winName
+	with timeout of 180 seconds
+		my walk(win, 0, dumpLines)
 	end timeout
 
 	set AppleScript's text item delimiters to linefeed

@@ -23,15 +23,50 @@ property maxMessagesPerAccount : 8
 
 on run
 	tell application "Microsoft Outlook" to activate
-	delay 1
+	delay 2
+
+	-- "front window" can resolve to nothing if grabbed too soon after
+	-- activate (confirmed via diagnose_outlook_ui.applescript) -- retry
+	-- for a few seconds instead of assuming it's ready immediately.
+	set win to missing value
+	repeat 10 times
+		with timeout of 30 seconds
+			tell application "System Events"
+				tell process "Microsoft Outlook"
+					set frontmost to true
+					try
+						if (count of windows) > 0 then set win to front window
+					end try
+				end tell
+			end tell
+		end timeout
+		if win is not missing value then exit repeat
+		delay 0.5
+	end repeat
+
+	if win is missing value then
+		say "Could not find an Outlook window. Stopping."
+		return
+	end if
+
+	set outlineEl to missing value
+	with timeout of 180 seconds
+		tell application "System Events"
+			tell process "Microsoft Outlook"
+				set outlineEl to my findFirstByRole(win, "AXOutline")
+			end tell
+		end tell
+	end timeout
+
+	if outlineEl is missing value then
+		say "Could not find the folder sidebar. Stopping."
+		return
+	end if
 
 	set inboxRows to {}
 	with timeout of 180 seconds
 		tell application "System Events"
 			tell process "Microsoft Outlook"
-				set frontmost to true
-				set win to front window
-				set outlineEl to my findFirstByRole(win, "AXOutline")
 				set allRows to (UI elements of outlineEl whose role is "AXRow")
 				repeat with r in allRows
 					try

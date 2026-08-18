@@ -7,6 +7,12 @@
 -- classic scripting dictionary (exchange/imap/pop account) can't see them
 -- at all -- confirmed via direct testing, not assumed.
 --
+-- IMPORTANT: never store "front window" (or any window) in a variable and
+-- use it later -- confirmed via repeated "Can't get window ..." errors
+-- that the reference goes stale within a fraction of a second, even
+-- across two adjacent statements. Always reference "window 1" literally,
+-- inline, in the same tell block as the work that uses it.
+--
 -- v1 scope: reads the message-list row's own text (sender + subject +
 -- time + a preview snippet -- same text visible in the inbox list), which
 -- is real and audibly useful today. It does NOT yet open each message to
@@ -16,8 +22,9 @@
 --
 -- Run directly in Script Editor: paste this over the existing script and
 -- press Run. Requires Script Editor to have Accessibility permission
--- (System Settings > Privacy & Security > Accessibility) -- already
--- granted earlier in this session.
+-- (System Settings > Privacy & Security > Accessibility) and Automation
+-- permission to control Microsoft Outlook and System Events (System
+-- Settings > Privacy & Security > Automation).
 
 property maxMessagesPerAccount : 8
 
@@ -25,9 +32,7 @@ on run
 	tell application "Microsoft Outlook" to activate
 	delay 2
 
-	set win to my getFrontWindow()
-
-	if win is missing value then
+	if not (my waitForWindow()) then
 		say "Could not find an Outlook window. Stopping."
 		return
 	end if
@@ -36,7 +41,7 @@ on run
 	with timeout of 180 seconds
 		tell application "System Events"
 			tell process "Microsoft Outlook"
-				set outlineEl to my findFirstByRole(win, "AXOutline")
+				set outlineEl to my findFirstByRole(window 1, "AXOutline")
 			end tell
 		end tell
 	end timeout
@@ -95,29 +100,25 @@ on run
 	say "Done reading unread messages."
 end run
 
-on getFrontWindow()
-	-- "front window" can resolve to nothing, or resolve to a reference
-	-- that goes stale a moment later, right after Outlook redraws (e.g.
-	-- right after activate, or right after clicking a folder in the
-	-- sidebar) -- confirmed via repeated "Can't get window ..." errors.
-	-- Retry for a few seconds instead of assuming it's ready immediately.
-	set foundWin to missing value
+on waitForWindow()
+	-- Only checks that *a* window exists -- never captures or returns a
+	-- reference to it. Callers always address "window 1" fresh, inline,
+	-- right where they use it.
 	repeat 10 times
 		with timeout of 30 seconds
 			tell application "System Events"
 				tell process "Microsoft Outlook"
 					set frontmost to true
 					try
-						if (count of windows) > 0 then set foundWin to front window
+						if (count of windows) > 0 then return true
 					end try
 				end tell
 			end tell
 		end timeout
-		if foundWin is not missing value then exit repeat
 		delay 0.5
 	end repeat
-	return foundWin
-end getFrontWindow
+	return false
+end waitForWindow
 
 on findFirstByRole(elem, targetRole)
 	tell application "System Events"
@@ -149,10 +150,9 @@ on readInbox(inboxRow)
 			end tell
 		end tell
 	end timeout
-	delay 2
+	delay 3
 
-	set win to my getFrontWindow()
-	if win is missing value then
+	if not (my waitForWindow()) then
 		say "Lost the Outlook window after clicking the inbox. Stopping."
 		return
 	end if
@@ -161,7 +161,7 @@ on readInbox(inboxRow)
 	with timeout of 180 seconds
 		tell application "System Events"
 			tell process "Microsoft Outlook"
-				set msgTable to my findTableByDesc(win, "Message List")
+				set msgTable to my findTableByDesc(window 1, "Message List")
 			end tell
 		end tell
 	end timeout

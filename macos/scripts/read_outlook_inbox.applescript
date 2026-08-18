@@ -38,13 +38,23 @@ on run
 	end if
 
 	set outlineEl to missing value
-	with timeout of 180 seconds
-		tell application "System Events"
-			tell process "Microsoft Outlook"
-				set outlineEl to my findFirstByRole(front window, "AXOutline")
-			end tell
-		end tell
-	end timeout
+	repeat 6 times
+		if my waitForWindow() then
+			try
+				with timeout of 60 seconds
+					tell application "System Events"
+						tell process "Microsoft Outlook"
+							set outlineEl to my findFirstByRole(front window, "AXOutline")
+						end tell
+					end tell
+				end timeout
+			on error
+				set outlineEl to missing value
+			end try
+		end if
+		if outlineEl is not missing value then exit repeat
+		delay 1
+	end repeat
 
 	if outlineEl is missing value then
 		say "Could not find the folder sidebar. Stopping."
@@ -152,19 +162,29 @@ on readInbox(inboxRow)
 	end timeout
 	delay 3
 
-	if not (my waitForWindow()) then
-		say "Lost the Outlook window after clicking the inbox. Stopping."
-		return
-	end if
-
+	-- Right after clicking a folder, Outlook's window can be mid-redraw
+	-- and briefly throw "Can't get window ..." no matter how the window
+	-- is addressed (confirmed: this happened with a stored reference, with
+	-- "window 1", and with inline "front window" alike). Retry the whole
+	-- lookup with backoff instead of assuming any fixed delay is enough.
 	set msgTable to missing value
-	with timeout of 180 seconds
-		tell application "System Events"
-			tell process "Microsoft Outlook"
-				set msgTable to my findTableByDesc(front window, "Message List")
-			end tell
-		end tell
-	end timeout
+	repeat 6 times
+		if my waitForWindow() then
+			try
+				with timeout of 60 seconds
+					tell application "System Events"
+						tell process "Microsoft Outlook"
+							set msgTable to my findTableByDesc(front window, "Message List")
+						end tell
+					end tell
+				end timeout
+			on error
+				set msgTable to missing value
+			end try
+		end if
+		if msgTable is not missing value then exit repeat
+		delay 1
+	end repeat
 
 	if msgTable is missing value then
 		say "Could not find the message list. Stopping."

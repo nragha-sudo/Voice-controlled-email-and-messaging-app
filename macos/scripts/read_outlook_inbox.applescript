@@ -46,6 +46,25 @@ on run
 		end tell
 	end timeout
 
+	-- Diagnostic: speak what was actually found before doing anything else,
+	-- so a silent run and a wrong-account run are distinguishable out loud.
+	say (((count of inboxRows) as text) & " matching inbox rows found.")
+
+	if (count of inboxRows) > 0 then
+		set firstDesc to ""
+		with timeout of 60 seconds
+			tell application "System Events"
+				tell process "Microsoft Outlook"
+					try
+						set c to item 1 of (UI elements of (item 1 of inboxRows) whose role is "AXCell")
+						set firstDesc to (description of c) as text
+					end try
+				end tell
+			end tell
+		end timeout
+		say ("First inbox found: " & firstDesc)
+	end if
+
 	-- Only the first matching Inbox row is processed (the IBM/work
 	-- account, based on its position above the Gmail account in the
 	-- sidebar) -- Gmail is intentionally skipped per request.

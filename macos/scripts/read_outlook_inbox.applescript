@@ -10,7 +10,7 @@
 -- IMPORTANT: never store "front window" (or any window) in a variable and
 -- use it later -- confirmed via repeated "Can't get window ..." errors
 -- that the reference goes stale within a fraction of a second, even
--- across two adjacent statements. Always reference "window 1" literally,
+-- across two adjacent statements. Always reference "front window" literally,
 -- inline, in the same tell block as the work that uses it.
 --
 -- v1 scope: reads the message-list row's own text (sender + subject +
@@ -41,7 +41,7 @@ on run
 	with timeout of 180 seconds
 		tell application "System Events"
 			tell process "Microsoft Outlook"
-				set outlineEl to my findFirstByRole(window 1, "AXOutline")
+				set outlineEl to my findFirstByRole(front window, "AXOutline")
 			end tell
 		end tell
 	end timeout
@@ -102,7 +102,7 @@ end run
 
 on waitForWindow()
 	-- Only checks that *a* window exists -- never captures or returns a
-	-- reference to it. Callers always address "window 1" fresh, inline,
+	-- reference to it. Callers always address "front window" fresh, inline,
 	-- right where they use it.
 	repeat 10 times
 		with timeout of 30 seconds
@@ -161,7 +161,7 @@ on readInbox(inboxRow)
 	with timeout of 180 seconds
 		tell application "System Events"
 			tell process "Microsoft Outlook"
-				set msgTable to my findTableByDesc(window 1, "Message List")
+				set msgTable to my findTableByDesc(front window, "Message List")
 			end tell
 		end tell
 	end timeout

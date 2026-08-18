@@ -49,27 +49,36 @@ on mainFlow()
 		return
 	end if
 
+	-- The window count genuinely flaps between 0 and 1+ from one instant to
+	-- the next on this machine (confirmed via spoken "Invalid index"
+	-- errors -- something on this corporate laptop is intermittently
+	-- interfering with Accessibility API calls, most likely an endpoint
+	-- security/monitoring agent). Check-and-use the window atomically in
+	-- the SAME call, and retry aggressively (many attempts, short gaps)
+	-- instead of a handful of slow retries -- this reliably catches a good
+	-- window state within a couple of seconds based on prior runs.
 	set outlineEl to missing value
 	set msgTable to missing value
-	repeat 6 times
+	repeat 40 times
 		try
-			with timeout of 60 seconds
+			with timeout of 30 seconds
 				tell application "System Events"
 					tell process "Microsoft Outlook"
-						if outlineEl is missing value then
-							set outlineEl to my findFirstByRole(front window, "AXOutline")
-						end if
-						if msgTable is missing value then
-							set msgTable to my findTableByDesc(front window, "Message List")
+						set frontmost to true
+						if (count of windows) > 0 then
+							if outlineEl is missing value then
+								set outlineEl to my findFirstByRole(front window, "AXOutline")
+							end if
+							if msgTable is missing value then
+								set msgTable to my findTableByDesc(front window, "Message List")
+							end if
 						end if
 					end tell
 				end tell
 			end timeout
-		on error errMsg
-			say ("First pass attempt failed: " & errMsg)
 		end try
 		if outlineEl is not missing value and msgTable is not missing value then exit repeat
-		delay 1
+		delay 0.25
 	end repeat
 
 	if outlineEl is missing value then
@@ -85,22 +94,29 @@ on mainFlow()
 	end if
 
 	set inboxRows to {}
-	with timeout of 180 seconds
-		tell application "System Events"
-			tell process "Microsoft Outlook"
-				set allRows to (UI elements of outlineEl whose role is "AXRow")
-				repeat with r in allRows
-					try
-						set c to item 1 of (UI elements of r whose role is "AXCell")
-						set d to (description of c) as text
-						if d starts with "Inbox;" and d contains "unread" then
-							set end of inboxRows to r
-						end if
-					end try
-				end repeat
-			end tell
-		end tell
-	end timeout
+	repeat 40 times
+		set inboxRows to {}
+		try
+			with timeout of 30 seconds
+				tell application "System Events"
+					tell process "Microsoft Outlook"
+						set allRows to (UI elements of outlineEl whose role is "AXRow")
+						repeat with r in allRows
+							try
+								set c to item 1 of (UI elements of r whose role is "AXCell")
+								set d to (description of c) as text
+								if d starts with "Inbox;" and d contains "unread" then
+									set end of inboxRows to r
+								end if
+							end try
+						end repeat
+					end tell
+				end tell
+			end timeout
+		end try
+		if (count of inboxRows) > 0 then exit repeat
+		delay 0.25
+	end repeat
 
 	say (((count of inboxRows) as text) & " matching inbox rows found.")
 
@@ -217,20 +233,20 @@ on clickIntoInboxAndFindTable(inboxRow)
 	delay 3
 
 	set msgTable to missing value
-	repeat 6 times
+	repeat 40 times
 		try
-			with timeout of 60 seconds
+			with timeout of 30 seconds
 				tell application "System Events"
 					tell process "Microsoft Outlook"
-						set msgTable to my findTableByDesc(front window, "Message List")
+						if (count of windows) > 0 then
+							set msgTable to my findTableByDesc(front window, "Message List")
+						end if
 					end tell
 				end tell
 			end timeout
-		on error errMsg
-			say ("Post click attempt failed: " & errMsg)
 		end try
 		if msgTable is not missing value then exit repeat
-		delay 1
+		delay 0.25
 	end repeat
 
 	return msgTable
@@ -238,13 +254,19 @@ end clickIntoInboxAndFindTable
 
 on readMessages(msgTable)
 	set rowList to {}
-	with timeout of 180 seconds
-		tell application "System Events"
-			tell process "Microsoft Outlook"
-				set rowList to (UI elements of msgTable whose role is "AXRow")
-			end tell
-		end tell
-	end timeout
+	repeat 40 times
+		try
+			with timeout of 30 seconds
+				tell application "System Events"
+					tell process "Microsoft Outlook"
+						set rowList to (UI elements of msgTable whose role is "AXRow")
+					end tell
+				end tell
+			end timeout
+		end try
+		if (count of rowList) > 0 then exit repeat
+		delay 0.25
+	end repeat
 
 	say (((count of rowList) as text) & " rows in the message list.")
 

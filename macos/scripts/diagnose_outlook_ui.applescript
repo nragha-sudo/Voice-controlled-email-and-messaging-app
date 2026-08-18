@@ -98,8 +98,8 @@ on walk(elem, depth, dumpLines)
 			set indent to indent & "  "
 		end repeat
 
-		set line to indent & "[" & r & "] sub=" & sub & " title=" & t & " desc=" & d
-		set end of dumpLines to line
+		set lineText to indent & "[" & r & "] sub=" & sub & " title=" & t & " desc=" & d
+		set end of dumpLines to lineText
 
 		try
 			set kids to UI elements of elem

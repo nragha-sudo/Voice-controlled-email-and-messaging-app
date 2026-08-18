@@ -25,24 +25,7 @@ on run
 	tell application "Microsoft Outlook" to activate
 	delay 2
 
-	-- "front window" can resolve to nothing if grabbed too soon after
-	-- activate (confirmed via diagnose_outlook_ui.applescript) -- retry
-	-- for a few seconds instead of assuming it's ready immediately.
-	set win to missing value
-	repeat 10 times
-		with timeout of 30 seconds
-			tell application "System Events"
-				tell process "Microsoft Outlook"
-					set frontmost to true
-					try
-						if (count of windows) > 0 then set win to front window
-					end try
-				end tell
-			end tell
-		end timeout
-		if win is not missing value then exit repeat
-		delay 0.5
-	end repeat
+	set win to my getFrontWindow()
 
 	if win is missing value then
 		say "Could not find an Outlook window. Stopping."
@@ -112,6 +95,30 @@ on run
 	say "Done reading unread messages."
 end run
 
+on getFrontWindow()
+	-- "front window" can resolve to nothing, or resolve to a reference
+	-- that goes stale a moment later, right after Outlook redraws (e.g.
+	-- right after activate, or right after clicking a folder in the
+	-- sidebar) -- confirmed via repeated "Can't get window ..." errors.
+	-- Retry for a few seconds instead of assuming it's ready immediately.
+	set foundWin to missing value
+	repeat 10 times
+		with timeout of 30 seconds
+			tell application "System Events"
+				tell process "Microsoft Outlook"
+					set frontmost to true
+					try
+						if (count of windows) > 0 then set foundWin to front window
+					end try
+				end tell
+			end tell
+		end timeout
+		if foundWin is not missing value then exit repeat
+		delay 0.5
+	end repeat
+	return foundWin
+end getFrontWindow
+
 on findFirstByRole(elem, targetRole)
 	tell application "System Events"
 		set r to ""
@@ -144,15 +151,31 @@ on readInbox(inboxRow)
 	end timeout
 	delay 2
 
+	set win to my getFrontWindow()
+	if win is missing value then
+		say "Lost the Outlook window after clicking the inbox. Stopping."
+		return
+	end if
+
+	set msgTable to missing value
+	with timeout of 180 seconds
+		tell application "System Events"
+			tell process "Microsoft Outlook"
+				set msgTable to my findTableByDesc(win, "Message List")
+			end tell
+		end tell
+	end timeout
+
+	if msgTable is missing value then
+		say "Could not find the message list. Stopping."
+		return
+	end if
+
 	set rowList to {}
 	with timeout of 180 seconds
 		tell application "System Events"
 			tell process "Microsoft Outlook"
-				set win to front window
-				set msgTable to my findTableByDesc(win, "Message List")
-				if msgTable is not missing value then
-					set rowList to (UI elements of msgTable whose role is "AXRow")
-				end if
+				set rowList to (UI elements of msgTable whose role is "AXRow")
 			end tell
 		end tell
 	end timeout

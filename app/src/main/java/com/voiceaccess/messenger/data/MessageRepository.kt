@@ -24,7 +24,16 @@ class MessageRepository(context: Context) {
     suspend fun getUnread(app: SourceApp? = null): List<MessageEntity> =
         if (app == null) dao.getUnread() else dao.getUnreadByApp(app)
 
+    /** Most recent messages regardless of read state (the API's "status=all" listing); [app] null is combined. */
+    suspend fun getRecent(app: SourceApp? = null, limit: Int = 100): List<MessageEntity> =
+        if (app == null) dao.getRecent(limit) else dao.getRecentByApp(app, limit)
+
+    suspend fun getById(id: Long): MessageEntity? = dao.getById(id)
+
     suspend fun markReadAloud(id: Long) = dao.markReadAloud(id)
+
+    /** See [MessageEntity.readOnSource]. */
+    suspend fun markReadOnSource(id: Long) = dao.markReadOnSource(id)
 
     /** Wipes the entire local queue (read and unread). New notifications are captured normally afterward. */
     suspend fun clearAll() = dao.clearAll()
@@ -52,6 +61,34 @@ class MessageRepository(context: Context) {
             notificationKey = notificationKey,
         )
         dao.insert(entity)
+    }
+
+    /**
+     * Inserts an incoming SMS. Separate from [enqueue] because SMS has no
+     * notification key to dedupe on (see [MessageDao.findSmsByThreadAndTimestamp])
+     * and carries [phoneNumber]/[threadId] instead, used later to mark it
+     * read on the platform SMS provider (see controller/MessageReadSync.kt).
+     */
+    suspend fun enqueueSms(
+        sender: String,
+        previewText: String,
+        timestamp: Long,
+        phoneNumber: String,
+        threadId: Long,
+    ) {
+        val existing = dao.findSmsByThreadAndTimestamp(threadId, timestamp)
+        if (existing != null) return
+        dao.insert(
+            MessageEntity(
+                sourceApp = SourceApp.SMS,
+                sender = sender,
+                previewText = previewText,
+                timestamp = timestamp,
+                readAloud = false,
+                phoneNumber = phoneNumber,
+                smsThreadId = threadId,
+            ),
+        )
     }
 
     companion object {

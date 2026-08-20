@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Generic message/envelope glyph for the SMS source (no third-party brand to evoke — SMS is a platform protocol). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#4CAF50"
+        android:pathData="M4,4 L20,4 C21.1,4 22,4.9 22,6 L22,16 C22,17.1 21.1,18 20,18 L7,18 L3,22 L3,6 C3,4.9 3.9,4 4,4 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M6,8 L18,8 L18,9.6 L6,9.6 Z M6,11.6 L18,11.6 L18,13.2 L6,13.2 Z M6,14.6 L13,14.6 L13,16.2 L6,16.2 Z" />
+</vector>

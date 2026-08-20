@@ -32,6 +32,7 @@ class VoiceAssistantController(
 ) {
     private val tts = TextToSpeechManager(context)
     private val stt = SpeechToTextManager(context)
+    private val readSync = MessageReadSync(context)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var activeJob: Job? = null
 
@@ -111,6 +112,7 @@ class VoiceAssistantController(
     private fun appMentionedIn(lowerText: String): SourceApp? = when {
         lowerText.contains("whatsapp") -> SourceApp.WHATSAPP
         lowerText.contains("outlook") -> SourceApp.OUTLOOK
+        lowerText.contains("sms") || lowerText.contains("text message") -> SourceApp.SMS
         else -> null
     }
 
@@ -165,11 +167,18 @@ class VoiceAssistantController(
         for (message in unread) {
             _status.value = "Reading ${message.sourceApp.displayName} message from ${message.sender}…"
 
-            val body = accessibility?.openAndReadMessage(message)?.takeIf { it.isNotBlank() }
-                ?: message.previewText.also {
-                    Log.w(TAG, "runReadUnreadMessages: id=${message.id} using notification preview as fallback " +
-                        "(accessibility service ${if (accessibility == null) "not connected" else "returned nothing"})")
-                }
+            // SMS has no accessibility flow to scrape (see AppUiConfig.forApp) —
+            // it arrives with its full text already via broadcast, so unlike
+            // Outlook/WhatsApp there's no truncated preview to work around.
+            val body = if (message.sourceApp == SourceApp.SMS) {
+                message.previewText
+            } else {
+                accessibility?.openAndReadMessage(message)?.takeIf { it.isNotBlank() }
+                    ?: message.previewText.also {
+                        Log.w(TAG, "runReadUnreadMessages: id=${message.id} using notification preview as fallback " +
+                            "(accessibility service ${if (accessibility == null) "not connected" else "returned nothing"})")
+                    }
+            }
 
             tts.speak("New ${message.sourceApp.displayName} message from ${message.sender}. $body")
 
@@ -200,14 +209,19 @@ class VoiceAssistantController(
                 instruction.contains("reply") -> {
                     val sent = handleSpokenReply(accessibility, message.sourceApp, biasingNames)
                     if (sent) {
-                        repository.markReadAloud(message.id)
+                        // A successful reply means the real conversation (WhatsApp) is
+                        // still open on screen right now, same as the plain "done" case below.
+                        readSync.markRead(repository, message, whatsAppAlreadyOpened = true)
                         tts.speak(context.getString(R.string.marked_as_done))
                     } else {
                         tts.speak(context.getString(R.string.skipped_for_later))
                     }
                 }
                 instruction.contains("done") -> {
-                    repository.markReadAloud(message.id)
+                    // openAndReadMessage() a few lines up already brought WhatsApp's real
+                    // conversation to the foreground to read it aloud — that's what marks
+                    // it read on WhatsApp's side, so tell readSync not to reopen it.
+                    readSync.markRead(repository, message, whatsAppAlreadyOpened = true)
                     tts.speak(context.getString(R.string.marked_as_done))
                 }
                 instruction.contains("skip") -> {
@@ -223,12 +237,26 @@ class VoiceAssistantController(
         _status.value = context.getString(R.string.status_ready)
     }
 
-    /** Returns true only if a reply was actually captured and sent — callers decide skip vs done from that. */
+    /**
+     * Returns true only if a reply was actually captured and sent — callers
+     * decide skip vs done from that. SMS has no accessibility-driven reply
+     * flow (see AppUiConfig.forApp): sending an SMS reply would need
+     * SmsManager.sendTextMessage instead, which — unlike marking read — does
+     * *not* require default-SMS-app status, but wiring up an outgoing-SMS
+     * flow is out of scope here, so an SMS "reply" instruction is reported
+     * as not sent (falls back to "skipped for later") rather than crashing
+     * or silently pretending to send.
+     */
     private suspend fun handleSpokenReply(
         accessibility: MessageAccessibilityService,
         app: SourceApp,
         biasingNames: List<String>,
     ): Boolean {
+        if (app == SourceApp.SMS) {
+            Log.d(TAG, "handleSpokenReply: SMS has no reply flow in this app, treating as not sent")
+            return false
+        }
+
         tts.speak(context.getString(R.string.prompt_say_reply))
         val replyText = stt.listenOnce(timeoutMs = REPLY_CAPTURE_TIMEOUT_MS, biasingStrings = biasingNames)
         if (replyText.isNullOrBlank()) {
@@ -242,6 +270,16 @@ class VoiceAssistantController(
     }
 
     private suspend fun runSearch(app: SourceApp?, keywords: String) {
+        // Search drives each app's own on-screen search UI (see AppUiConfig),
+        // which only exists for Outlook/WhatsApp — SMS stores its full text
+        // already (no truncation to search around a scrape of), so there's no
+        // SMS search UI to drive here.
+        if (app == SourceApp.SMS) {
+            tts.speak("SMS search isn't supported — SMS messages already store their full text, so there's nothing to search on-screen.")
+            _status.value = context.getString(R.string.status_ready)
+            return
+        }
+
         val accessibility = MessageAccessibilityService.currentInstance()
         if (accessibility == null) {
             tts.speak(context.getString(R.string.status_accessibility_missing))
@@ -249,7 +287,7 @@ class VoiceAssistantController(
             return
         }
 
-        val targets = app?.let { listOf(it) } ?: SourceApp.entries.toList()
+        val targets = app?.let { listOf(it) } ?: listOf(SourceApp.OUTLOOK, SourceApp.WHATSAPP)
         for (target in targets) {
             _status.value = "Searching ${target.displayName} for \"$keywords\"…"
             val results = accessibility.performSearch(target, keywords)

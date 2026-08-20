@@ -14,6 +14,17 @@
          skipped and recognition falls back to the plain language model. -->
     <uses-permission android:name="android.permission.READ_CONTACTS" />
 
+    <!-- SMS source: lets SmsReceiver observe incoming SMS_RECEIVED broadcasts
+         and (best-effort, see sms/SmsReadMarker.kt) query the platform SMS
+         provider. Neither permission requires/implies default-SMS-app status. -->
+    <uses-permission android:name="android.permission.RECEIVE_SMS" />
+    <uses-permission android:name="android.permission.READ_SMS" />
+
+    <!-- Local API server: keeps it alive in the background as a foreground service. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
@@ -61,6 +72,28 @@
                 android:name="android.accessibilityservice"
                 android:resource="@xml/accessibility_service_config" />
         </service>
+
+        <!-- SMS source: queues incoming texts into the same message_queue table
+             as Outlook/WhatsApp, tagged SourceApp.SMS. Requires RECEIVE_SMS,
+             granted at runtime (see MainActivity). exported=true is required
+             for the system to deliver this broadcast at all. -->
+        <receiver
+            android:name=".sms.SmsReceiver"
+            android:exported="true"
+            android:permission="android.permission.BROADCAST_SMS">
+            <intent-filter>
+                <action android:name="android.provider.Telephony.SMS_RECEIVED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Local HTTP server exposing the message queue over the network (see
+             server/LocalApiServer.kt) for per-source querying from Claude,
+             intended to be reached only over Tailscale — see README. Runs as
+             a foreground service so it survives the screen turning off. -->
+        <service
+            android:name=".server.ApiServerService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
 
     </application>
 </manifest>

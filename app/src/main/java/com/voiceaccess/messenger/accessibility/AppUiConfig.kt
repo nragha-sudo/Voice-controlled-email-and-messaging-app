@@ -158,8 +158,17 @@ object AppUiConfig {
         settleDelayMs = 200,
     )
 
+    /**
+     * SMS is never a valid argument here: it has no on-screen accessibility
+     * flow to drive (it arrives with its full text already via broadcast —
+     * see sms/SmsReceiver.kt — so there's nothing to scrape, and reply/
+     * search for SMS are handled, or explicitly declined, before reaching
+     * MessageAccessibilityService at all; see VoiceAssistantController and
+     * server/LocalApiServer's SMS-specific branches).
+     */
     fun forApp(app: SourceApp): AppUiSelectors = when (app) {
         SourceApp.OUTLOOK -> outlook
         SourceApp.WHATSAPP -> whatsapp
+        SourceApp.SMS -> error("AppUiConfig has no selectors for SMS — SMS never goes through the accessibility flow, see this function's doc comment")
     }
 }

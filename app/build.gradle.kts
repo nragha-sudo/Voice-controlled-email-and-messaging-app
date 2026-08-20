@@ -55,6 +55,12 @@ dependencies {
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 
+    // Embedded HTTP server exposing the message queue to Claude over Tailscale (see server/).
+    implementation("org.nanohttpd:nanohttpd:2.3.1")
+
+    // Encrypted storage for the server's shared API key (see server/ApiKeyStore.kt).
+    implementation("androidx.security:security-crypto:1.1.0-alpha06")
+
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")

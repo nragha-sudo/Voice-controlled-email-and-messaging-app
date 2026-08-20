@@ -4,6 +4,7 @@
 
     <string name="btn_read_outlook">Outlook</string>
     <string name="btn_read_whatsapp">WhatsApp</string>
+    <string name="btn_read_sms">SMS</string>
     <string name="btn_stop_reading">Stop Reading</string>
     <string name="btn_voice_command">Voice Command</string>
     <string name="btn_search">Search</string>
@@ -14,6 +15,7 @@
     <string name="status_idle">Idle</string>
     <string name="status_notification_access_missing">Notification access is off — tap to enable</string>
     <string name="status_accessibility_missing">Accessibility service is off — tap to enable</string>
+    <string name="status_sms_permission_missing">SMS access is off — tap to enable</string>
     <string name="status_ready">Ready</string>
 
     <string name="prompt_reply_or_next">Say reply, skip, or done.</string>
@@ -29,4 +31,20 @@
     <string name="clear_queue_confirm_positive">Clear</string>
     <string name="clear_queue_confirm_negative">Cancel</string>
     <string name="clear_queue_done">Queue cleared.</string>
+
+    <string name="label_api_server_section">Local API Server (for Claude)</string>
+    <string name="btn_start_server">Start Server</string>
+    <string name="btn_stop_server">Stop Server</string>
+    <string name="status_server_stopped">Server stopped</string>
+    <string name="status_server_running">Server running on port %1$d</string>
+    <string name="btn_copy_api_key">Copy API Key</string>
+    <string name="btn_regenerate_api_key">Regenerate</string>
+    <string name="label_api_key">API key: %1$s</string>
+    <string name="api_key_copied">API key copied to clipboard.</string>
+    <string name="api_key_regenerate_confirm_title">Regenerate API key?</string>
+    <string name="api_key_regenerate_confirm_message">Any tool using the old key (e.g. Claude, if already configured) will stop working until you give it the new one.</string>
+    <string name="api_server_notification_title">Voice Access Messenger API</string>
+    <string name="api_server_notification_text">Listening on port %1$d — reachable over Tailscale only</string>
+    <string name="api_server_channel_name">Local API server</string>
+    <string name="label_tailscale_hint">Reach this server at http://&lt;this device\'s Tailscale IP&gt;:%1$d — install Tailscale on this device and on the client, then use the Tailscale IP shown in the Tailscale app. See README for setup.</string>
 </resources>

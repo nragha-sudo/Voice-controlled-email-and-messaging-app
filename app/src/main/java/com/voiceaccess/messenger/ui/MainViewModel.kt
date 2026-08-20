@@ -25,6 +25,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val whatsappUnreadCount: StateFlow<Int> = repository.observeUnreadCount(SourceApp.WHATSAPP)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
 
+    val smsUnreadCount: StateFlow<Int> = repository.observeUnreadCount(SourceApp.SMS)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
+
     val status: StateFlow<String> = controller.status
     val isReading: StateFlow<Boolean> = controller.isReading
 

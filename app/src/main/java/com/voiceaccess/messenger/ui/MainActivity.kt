@@ -1,6 +1,8 @@
 package com.voiceaccess.messenger.ui
 
 import android.Manifest
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
@@ -21,19 +23,24 @@ import com.voiceaccess.messenger.R
 import com.voiceaccess.messenger.accessibility.MessageAccessibilityService
 import com.voiceaccess.messenger.data.SourceApp
 import com.voiceaccess.messenger.databinding.ActivityMainBinding
+import com.voiceaccess.messenger.server.ApiKeyStore
+import com.voiceaccess.messenger.server.ApiServerService
 import com.voiceaccess.messenger.voice.ContactsProvider
 import kotlinx.coroutines.launch
 
 /**
- * The app's single screen: separate Outlook and WhatsApp read buttons (each
- * filters the queue to that app only), a tap-then-speak voice-command button
- * (covers phrases like "read my messages" / "search whatsapp for invoice"),
- * and a typed search fallback for testing without a microphone.
+ * The app's single screen: separate Outlook, WhatsApp, and SMS read buttons
+ * (each filters the queue to that source only), a tap-then-speak
+ * voice-command button (covers phrases like "read my messages" / "search
+ * whatsapp for invoice"), a typed search fallback for testing without a
+ * microphone, and the local API server controls (start/stop, API key) that
+ * let Claude query the same queue over Tailscale — see server/LocalApiServer.kt.
  */
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
     private val viewModel: MainViewModel by viewModels()
+    private val apiKeyStore by lazy { ApiKeyStore(applicationContext) }
 
     /**
      * Every entry point that can end up listening for speech (both read
@@ -62,6 +69,10 @@ class MainActivity : AppCompatActivity() {
             if (!spoken.isNullOrBlank()) viewModel.controller.handleVoiceCommand(spoken)
         }
 
+    /** SMS is independent of the mic/contacts flow above — it's requested once up front, same as contacts, and simply means SmsReceiver stays inert until granted. */
+    private val requestSmsPermissions =
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { refreshPermissionBanner() }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
@@ -73,6 +84,9 @@ class MainActivity : AppCompatActivity() {
         binding.btnReadWhatsapp.setOnClickListener {
             withMicPermission { viewModel.controller.readUnreadMessages(SourceApp.WHATSAPP) }
         }
+        binding.btnReadSms.setOnClickListener {
+            withMicPermission { viewModel.controller.readUnreadMessages(SourceApp.SMS) }
+        }
         binding.btnVoiceCommand.setOnClickListener {
             withMicPermission { launchVoiceCommandRecognizer() }
         }
@@ -83,6 +97,9 @@ class MainActivity : AppCompatActivity() {
         binding.textPermissionBanner.setOnClickListener { openMissingPermissionSettings() }
         binding.btnClearQueue.setOnClickListener { confirmClearQueue() }
         binding.btnStopReading.setOnClickListener { viewModel.controller.stopReading() }
+        binding.btnToggleServer.setOnClickListener { toggleApiServer() }
+        binding.btnCopyApiKey.setOnClickListener { copyApiKeyToClipboard() }
+        binding.btnRegenerateApiKey.setOnClickListener { confirmRegenerateApiKey() }
 
         // Ask for the optional contacts permission once, up front, decoupled
         // from any listening action — asking it concurrently with a read/
@@ -92,6 +109,26 @@ class MainActivity : AppCompatActivity() {
         if (hasPermission(Manifest.permission.RECORD_AUDIO) && !hasPermission(Manifest.permission.READ_CONTACTS)) {
             requestVoicePermissions.launch(arrayOf(Manifest.permission.READ_CONTACTS))
         }
+
+        // SMS is a whole message source (not an optional bias like contacts),
+        // so it's requested unconditionally on first run rather than gated
+        // behind another permission the way contacts is above. POST_NOTIFICATIONS
+        // (API 33+, needed for the API server's foreground-service notification
+        // to actually show) is bundled into the same one-time request.
+        val missingSmsOrNotifications = buildList {
+            if (!hasPermission(Manifest.permission.RECEIVE_SMS)) add(Manifest.permission.RECEIVE_SMS)
+            if (!hasPermission(Manifest.permission.READ_SMS)) add(Manifest.permission.READ_SMS)
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU &&
+                !hasPermission(Manifest.permission.POST_NOTIFICATIONS)
+            ) {
+                add(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+        if (missingSmsOrNotifications.isNotEmpty()) {
+            requestSmsPermissions.launch(missingSmsOrNotifications.toTypedArray())
+        }
+
+        refreshServerUi()
 
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -111,6 +148,11 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
                 launch {
+                    viewModel.smsUnreadCount.collect {
+                        binding.textUnreadSms.text = getString(R.string.label_unread_count_short, it)
+                    }
+                }
+                launch {
                     viewModel.status.collect { binding.textStatus.text = it }
                 }
                 launch {
@@ -125,6 +167,51 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         refreshPermissionBanner()
+        refreshServerUi()
+    }
+
+    private fun toggleApiServer() {
+        if (ApiServerService.isRunning) {
+            stopService(Intent(this, ApiServerService::class.java))
+        } else {
+            ContextCompat.startForegroundService(this, Intent(this, ApiServerService::class.java))
+        }
+        // The service flips ApiServerService.isRunning synchronously in
+        // onCreate/onDestroy, both of which run before start/stopService
+        // returns, so this reflects the new state immediately.
+        refreshServerUi()
+    }
+
+    private fun refreshServerUi() {
+        val running = ApiServerService.isRunning
+        binding.btnToggleServer.text = getString(
+            if (running) R.string.btn_stop_server else R.string.btn_start_server,
+        )
+        binding.textServerStatus.text = if (running) {
+            getString(R.string.status_server_running, ApiServerService.PORT)
+        } else {
+            getString(R.string.status_server_stopped)
+        }
+        binding.textApiKey.text = getString(R.string.label_api_key, apiKeyStore.getOrCreateKey())
+        binding.textTailscaleHint.text = getString(R.string.label_tailscale_hint, ApiServerService.PORT)
+    }
+
+    private fun copyApiKeyToClipboard() {
+        val clipboard = getSystemService(ClipboardManager::class.java)
+        clipboard.setPrimaryClip(ClipData.newPlainText("API key", apiKeyStore.getOrCreateKey()))
+        Toast.makeText(this, R.string.api_key_copied, Toast.LENGTH_SHORT).show()
+    }
+
+    private fun confirmRegenerateApiKey() {
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.api_key_regenerate_confirm_title)
+            .setMessage(R.string.api_key_regenerate_confirm_message)
+            .setPositiveButton(R.string.clear_queue_confirm_positive) { _, _ ->
+                apiKeyStore.regenerateKey()
+                refreshServerUi()
+            }
+            .setNegativeButton(R.string.clear_queue_confirm_negative, null)
+            .show()
     }
 
     private fun withMicPermission(action: () -> Unit) {
@@ -174,14 +261,18 @@ class MainActivity : AppCompatActivity() {
         runCatching { voiceCommandRecognizer.launch(intent) }
     }
 
-    /** Both background services need a one-time manual grant in system settings; surface whichever is missing. */
+    /** The background services need a one-time manual grant in system settings; surface whichever is missing, most-critical first. */
     private fun refreshPermissionBanner() {
         when {
             !notificationAccessGranted() -> showBanner(getString(R.string.status_notification_access_missing))
             !MessageAccessibilityService.isEnabled(this) -> showBanner(getString(R.string.status_accessibility_missing))
+            !hasSmsPermission() -> showBanner(getString(R.string.status_sms_permission_missing))
             else -> binding.textPermissionBanner.visibility = View.GONE
         }
     }
+
+    private fun hasSmsPermission(): Boolean =
+        hasPermission(Manifest.permission.RECEIVE_SMS) && hasPermission(Manifest.permission.READ_SMS)
 
     private fun showBanner(text: String) {
         binding.textPermissionBanner.text = text
@@ -189,12 +280,13 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun openMissingPermissionSettings() {
-        val action = if (!notificationAccessGranted()) {
-            Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS
-        } else {
-            Settings.ACTION_ACCESSIBILITY_SETTINGS
+        when {
+            !notificationAccessGranted() -> startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+            !MessageAccessibilityService.isEnabled(this) -> startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            !hasSmsPermission() -> requestSmsPermissions.launch(
+                arrayOf(Manifest.permission.RECEIVE_SMS, Manifest.permission.READ_SMS),
+            )
         }
-        startActivity(Intent(action))
     }
 
     private fun notificationAccessGranted(): Boolean =

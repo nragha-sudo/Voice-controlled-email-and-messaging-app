@@ -112,12 +112,14 @@ class MainActivity : AppCompatActivity() {
 
         // SMS is a whole message source (not an optional bias like contacts),
         // so it's requested unconditionally on first run rather than gated
-        // behind another permission the way contacts is above. POST_NOTIFICATIONS
-        // (API 33+, needed for the API server's foreground-service notification
-        // to actually show) is bundled into the same one-time request.
+        // behind another permission the way contacts is above. SEND_SMS (for
+        // the voice "reply" flow) and POST_NOTIFICATIONS (API 33+, needed for
+        // the API server's foreground-service notification to actually show)
+        // are bundled into the same one-time request.
         val missingSmsOrNotifications = buildList {
             if (!hasPermission(Manifest.permission.RECEIVE_SMS)) add(Manifest.permission.RECEIVE_SMS)
             if (!hasPermission(Manifest.permission.READ_SMS)) add(Manifest.permission.READ_SMS)
+            if (!hasPermission(Manifest.permission.SEND_SMS)) add(Manifest.permission.SEND_SMS)
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU &&
                 !hasPermission(Manifest.permission.POST_NOTIFICATIONS)
             ) {

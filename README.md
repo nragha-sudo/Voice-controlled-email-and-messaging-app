@@ -15,8 +15,7 @@ external tool like Claude can list and mark-as-read messages per source over
 your private Tailscale network.
 
 Three voice commands, working identically across all three sources (SMS
-search/reply are the one exception — see
-[Known limitations](#known-limitations)):
+search is the one exception — see [Known limitations](#known-limitations)):
 
 - **Read my Outlook / WhatsApp messages** — two separate buttons (or "read
   outlook/whatsapp messages" by voice) each read that app's unread queue
@@ -156,10 +155,13 @@ implementation/OS version — it's a hint, not a guarantee.
    - **Accessibility service** — required for reading full content, search,
      and reply for Outlook/WhatsApp (not used for SMS). Deep-links to
      `Settings > Accessibility > Downloaded apps > Voice Access Messenger`.
-   - **SMS access** (`RECEIVE_SMS` + `READ_SMS`) — required for the SMS
-     source; requested automatically on first launch, or via the permission
-     banner if declined. Declining it just means SMS notifications are never
-     queued — Outlook/WhatsApp are unaffected.
+   - **SMS access** (`RECEIVE_SMS` + `READ_SMS`, plus `SEND_SMS` for voice
+     replies) — requested together automatically on first launch, or via the
+     permission banner if `RECEIVE_SMS`/`READ_SMS` are declined. Declining
+     `RECEIVE_SMS`/`READ_SMS` means SMS notifications are never queued;
+     declining just `SEND_SMS` only disables the voice "reply" flow for SMS
+     (reading/marking read still work). Outlook/WhatsApp are unaffected
+     either way.
    - **Microphone** — requested at runtime the first time you tap any read
      button or the voice command button; needed for command capture,
      reply/skip/done listening, and reply dictation.
@@ -275,13 +277,20 @@ drift across app updates. When a flow stops finding an element:
 - **Single active flow at a time.** Read/search/reply all share one
   accessibility action lock, matching the fact that only one app can be in
   the foreground at once.
-- **SMS has no search or voice-reply flow.** Search drives each app's
-  on-screen search UI (there's nothing to search around for SMS, since its
-  text is already stored in full); a spoken "reply" to an SMS is reported as
-  not sent rather than attempted. Sending an SMS reply would need
-  `SmsManager.sendTextMessage` (which, unlike marking read below, does *not*
-  require default-SMS-app status) — implementing that outgoing-message flow
-  was out of scope here.
+- **SMS has no search flow.** Search drives each app's on-screen search UI
+  (there's nothing to search around for SMS, since its text is already
+  stored in full) — a spoken "search sms for …" is declined with an
+  explanation rather than attempted.
+- **SMS reply sends directly via `SmsManager`, not through accessibility.**
+  Unlike Outlook/WhatsApp (which type into the app's own on-screen reply
+  field), SMS has no on-screen UI to drive for this, so a spoken "reply" to
+  an SMS is sent with `sms/SmsSender.kt`'s `SmsManager.sendMultipartTextMessage`
+  instead. This is a normal dangerous-permission (`SEND_SMS`) action — unlike
+  marking a message read (below), sending does *not* require default-SMS-app
+  status, so it works on a normal install once the permission is granted. If
+  `SEND_SMS` was declined or the message has no stored phone number, the
+  reply is reported as not sent (falls back to "skipped for later") rather
+  than silently failing.
 - **Marking a message read on the real SMS app requires this app to be the
   device's default SMS handler, which it deliberately is not.** Android only
   honors writes to the platform SMS provider (including flipping the `read`
@@ -330,6 +339,7 @@ drift across app updates. When a flow stops finding an element:
 | `BIND_NOTIFICATION_LISTENER_SERVICE` (system-granted after user opts in) | Read Outlook/WhatsApp notifications |
 | `BIND_ACCESSIBILITY_SERVICE` (system-granted after user opts in) | Read full content, search, reply for Outlook/WhatsApp; opening a WhatsApp chat also marks it read there |
 | `RECEIVE_SMS`, `READ_SMS` | Capture incoming SMS into the queue, tagged `source_app = SMS`. Does **not** grant or require default-SMS-app status. |
+| `SEND_SMS` | Sends a spoken "reply" to an SMS via `SmsManager`. Also does **not** require default-SMS-app status. |
 | `RECORD_AUDIO` | Voice command capture, reply dictation |
 | `INTERNET` | `SpeechRecognizer` may use a network recognition backend; the local API server also listens on this permission's socket access |
 | `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_DATA_SYNC` | Keeps the local API server running while the app is backgrounded |

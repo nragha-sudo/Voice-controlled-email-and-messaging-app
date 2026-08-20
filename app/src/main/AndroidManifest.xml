@@ -20,6 +20,12 @@
     <uses-permission android:name="android.permission.RECEIVE_SMS" />
     <uses-permission android:name="android.permission.READ_SMS" />
 
+    <!-- Lets the voice "reply" flow send an SMS reply via SmsManager (see
+         sms/SmsSender.kt). Unlike SmsReadMarker's mark-as-read write, sending
+         is a normal dangerous permission — it does not require/imply
+         default-SMS-app status. -->
+    <uses-permission android:name="android.permission.SEND_SMS" />
+
     <!-- Local API server: keeps it alive in the background as a foreground service. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />

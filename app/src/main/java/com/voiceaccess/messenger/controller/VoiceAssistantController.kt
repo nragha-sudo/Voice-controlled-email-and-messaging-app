@@ -7,8 +7,10 @@ import android.util.Log
 import androidx.core.content.ContextCompat
 import com.voiceaccess.messenger.R
 import com.voiceaccess.messenger.accessibility.MessageAccessibilityService
+import com.voiceaccess.messenger.data.MessageEntity
 import com.voiceaccess.messenger.data.MessageRepository
 import com.voiceaccess.messenger.data.SourceApp
+import com.voiceaccess.messenger.sms.SmsSender
 import com.voiceaccess.messenger.voice.ContactsProvider
 import com.voiceaccess.messenger.voice.SpeechToTextManager
 import com.voiceaccess.messenger.voice.TextToSpeechManager
@@ -207,10 +209,11 @@ class VoiceAssistantController(
                     return
                 }
                 instruction.contains("reply") -> {
-                    val sent = handleSpokenReply(accessibility, message.sourceApp, biasingNames)
+                    val sent = handleSpokenReply(accessibility, message, biasingNames)
                     if (sent) {
-                        // A successful reply means the real conversation (WhatsApp) is
-                        // still open on screen right now, same as the plain "done" case below.
+                        // For WhatsApp specifically, a successful reply means the real
+                        // conversation is still open on screen right now, same as the plain
+                        // "done" case below — this flag is ignored for SMS/Outlook.
                         readSync.markRead(repository, message, whatsAppAlreadyOpened = true)
                         tts.speak(context.getString(R.string.marked_as_done))
                     } else {
@@ -240,22 +243,18 @@ class VoiceAssistantController(
     /**
      * Returns true only if a reply was actually captured and sent — callers
      * decide skip vs done from that. SMS has no accessibility-driven reply
-     * flow (see AppUiConfig.forApp): sending an SMS reply would need
-     * SmsManager.sendTextMessage instead, which — unlike marking read — does
-     * *not* require default-SMS-app status, but wiring up an outgoing-SMS
-     * flow is out of scope here, so an SMS "reply" instruction is reported
-     * as not sent (falls back to "skipped for later") rather than crashing
-     * or silently pretending to send.
+     * flow (see AppUiConfig.forApp) since there's no on-screen UI to drive
+     * for it; instead it sends directly via [SmsSender] (SEND_SMS is a
+     * normal dangerous permission, unlike the mark-as-read write in
+     * [com.voiceaccess.messenger.sms.SmsReadMarker], so this doesn't need
+     * default-SMS-app status).
      */
     private suspend fun handleSpokenReply(
         accessibility: MessageAccessibilityService,
-        app: SourceApp,
+        message: MessageEntity,
         biasingNames: List<String>,
     ): Boolean {
-        if (app == SourceApp.SMS) {
-            Log.d(TAG, "handleSpokenReply: SMS has no reply flow in this app, treating as not sent")
-            return false
-        }
+        val app = message.sourceApp
 
         tts.speak(context.getString(R.string.prompt_say_reply))
         val replyText = stt.listenOnce(timeoutMs = REPLY_CAPTURE_TIMEOUT_MS, biasingStrings = biasingNames)
@@ -264,10 +263,26 @@ class VoiceAssistantController(
             return false
         }
 
+        if (app == SourceApp.SMS) {
+            val phoneNumber = message.phoneNumber
+            if (phoneNumber.isNullOrBlank() || !hasSendSmsPermission()) {
+                Log.w(TAG, "handleSpokenReply: id=${message.id} cannot send SMS reply — " +
+                    "phoneNumber=${phoneNumber != null} sendSmsPermissionGranted=${hasSendSmsPermission()}")
+                return false
+            }
+            val sent = SmsSender.send(context, phoneNumber, replyText)
+            Log.d(TAG, "handleSpokenReply: id=${message.id} SmsSender result=$sent")
+            return sent
+        }
+
         val sent = accessibility.sendReply(app, replyText)
         Log.d(TAG, "handleSpokenReply: app=${app.name} sendReply result=$sent")
         return sent
     }
+
+    private fun hasSendSmsPermission(): Boolean =
+        ContextCompat.checkSelfPermission(context, Manifest.permission.SEND_SMS) ==
+            PackageManager.PERMISSION_GRANTED
 
     private suspend fun runSearch(app: SourceApp?, keywords: String) {
         // Search drives each app's own on-screen search UI (see AppUiConfig),

@@ -54,6 +54,23 @@ class SpeechToTextManager(private val context: Context) {
                         putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
                         putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
                         putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, context.packageName)
+                        // This headless path has no "Speak now"/waveform UI to reassure the
+                        // user it's actually listening, so the default (short) endpointer
+                        // timings read as "you have to be loud and precise" — normal speech
+                        // at a normal pace gets cut off as silence before it's finished, or
+                        // never registers as "speech" at all against a noisy room. Loosening
+                        // these — and explicitly *not* preferring the offline model, which is
+                        // noticeably less sensitive — is the actual public lever available
+                        // here; there's no API to raise mic gain/AGC, that's fixed by the OS.
+                        // Scaled off timeoutMs (capped) rather than a fixed constant, so these
+                        // never exceed — and cause the recognizer to get cut off by — this
+                        // call's own outer timeout, which differs between call sites (a short
+                        // 6s reply/skip/done listen vs. a longer 12s reply-dictation capture).
+                        val silenceMs = (timeoutMs / 3).coerceAtMost(2_500L)
+                        putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 1_500L)
+                        putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, silenceMs)
+                        putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, silenceMs)
+                        putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, false)
                         if (biasingStrings.isNotEmpty()) {
                             putStringArrayListExtra(ContactsProvider.EXTRA_BIASING_STRINGS, ArrayList(biasingStrings))
                         }

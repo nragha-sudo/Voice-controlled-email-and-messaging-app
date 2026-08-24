@@ -58,7 +58,7 @@ class SmsReceiver : BroadcastReceiver() {
         val appContext = context.applicationContext
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val threadId = Telephony.Threads.getOrCreateThreadId(appContext, sender)
+                val threadId = resolveThreadId(appContext, sender)
                 Log.d(TAG, "onReceive: queuing SMS from \"$sender\" (threadId=$threadId)")
                 MessageRepository.getInstance(appContext).enqueueSms(
                     sender = sender,
@@ -73,6 +73,30 @@ class SmsReceiver : BroadcastReceiver() {
                 pendingResult.finish()
             }
         }
+    }
+
+    /**
+     * [Telephony.Threads.getOrCreateThreadId] *writes* to the platform
+     * SMS/MMS provider (it creates the thread row if none exists yet), and
+     * on several devices/OS versions that write is rejected for any app
+     * that isn't the default SMS handler — same restriction as
+     * [SmsReadMarker], but hit here on the *capture* path instead, where a
+     * thrown SecurityException used to take the whole message down with it
+     * (caught by the broad try/catch above, so the SMS was silently never
+     * queued at all). Capturing a message must never depend on that write:
+     * on failure, fall back to a synthetic id derived from the sender's
+     * number, stable enough to group that sender's messages together. A
+     * synthetic id just means [SmsReadMarker]'s later mark-as-read attempt
+     * finds zero matching platform rows (a documented no-op already), not a
+     * missing message.
+     */
+    private fun resolveThreadId(context: Context, sender: String): Long = try {
+        Telephony.Threads.getOrCreateThreadId(context, sender)
+    } catch (e: SecurityException) {
+        val fallback = sender.hashCode().toLong()
+        Log.w(TAG, "resolveThreadId: getOrCreateThreadId denied for \"$sender\" (not the default SMS app) — " +
+            "using a synthetic thread id ($fallback) so the message is still captured", e)
+        fallback
     }
 
     private companion object {

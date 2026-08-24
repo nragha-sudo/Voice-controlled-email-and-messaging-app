@@ -40,11 +40,16 @@ class ApiServerService : Service() {
         startForeground(NOTIFICATION_ID, buildNotification(), foregroundServiceType())
 
         if (server == null) {
-            val repository = MessageRepository.getInstance(applicationContext)
-            val readSync = MessageReadSync(applicationContext)
-            val apiKeyStore = ApiKeyStore(applicationContext)
-            val newServer = LocalApiServer(PORT, applicationContext, repository, readSync, apiKeyStore)
+            // Everything here — including ApiKeyStore's construction, which
+            // touches the Android Keystore and has real failure modes on some
+            // devices — must stay inside this try/catch. An exception here
+            // used to escape uncaught and take the whole app process down
+            // with it, not just this service; see ApiKeyStore's doc comment.
             try {
+                val repository = MessageRepository.getInstance(applicationContext)
+                val readSync = MessageReadSync(applicationContext)
+                val apiKeyStore = ApiKeyStore(applicationContext)
+                val newServer = LocalApiServer(PORT, applicationContext, repository, readSync, apiKeyStore)
                 newServer.start(NANOHTTPD_SOCKET_TIMEOUT_MS, false)
                 server = newServer
                 Log.i(TAG, "onStartCommand: API server listening on port $PORT")

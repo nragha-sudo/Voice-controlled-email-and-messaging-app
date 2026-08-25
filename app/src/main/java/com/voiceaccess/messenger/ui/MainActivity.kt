@@ -96,7 +96,6 @@ class MainActivity : AppCompatActivity() {
         binding.btnClearCacheWhatsapp.setOnClickListener { confirmClearCache(SourceApp.WHATSAPP) }
         binding.btnClearCacheOutlook.setOnClickListener { confirmClearCache(SourceApp.OUTLOOK) }
         binding.btnClearCacheSms.setOnClickListener { confirmClearCache(SourceApp.SMS) }
-        binding.btnClearCacheAll.setOnClickListener { confirmClearCache(app = null) }
 
         binding.btnActionReplay.setOnClickListener { viewModel.controller.submitAction(UserAction.REPLAY) }
         binding.btnActionDone.setOnClickListener { viewModel.controller.submitAction(UserAction.DONE) }
@@ -182,20 +181,10 @@ class MainActivity : AppCompatActivity() {
         viewModel.controller.search(app, keywords)
     }
 
-    private fun confirmClearCache(app: SourceApp?) {
-        val title = if (app == null) {
-            getString(R.string.clear_cache_all_confirm_title)
-        } else {
-            getString(R.string.clear_cache_app_confirm_title, app.displayName)
-        }
-        val message = if (app == null) {
-            getString(R.string.clear_cache_all_confirm_message)
-        } else {
-            getString(R.string.clear_cache_app_confirm_message, app.displayName)
-        }
+    private fun confirmClearCache(app: SourceApp) {
         MaterialAlertDialogBuilder(this)
-            .setTitle(title)
-            .setMessage(message)
+            .setTitle(getString(R.string.clear_cache_app_confirm_title, app.displayName))
+            .setMessage(getString(R.string.clear_cache_app_confirm_message, app.displayName))
             .setPositiveButton(R.string.clear_cache_confirm_positive) { _, _ ->
                 viewModel.clearCache(app)
                 Toast.makeText(this, R.string.clear_cache_done, Toast.LENGTH_SHORT).show()

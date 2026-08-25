@@ -49,10 +49,15 @@ enum class UserAction {
  *
  * Every "what do you want to do with this message" decision (replay/done/
  * reply/skip) can be answered by *either* a spoken word or the matching
- * on-screen button — see [submitAction] and [presentMessageAndAwaitAction]
- * — whichever arrives first wins, and a spoken word interrupts (barges in
- * on) the message currently being read aloud the instant speech is
- * detected, not just after it finishes.
+ * on-screen button — see [submitAction] and [presentMessageAndAwaitAction].
+ * A button tap is honored the instant it's tapped, even while the message
+ * is still being spoken (it never touches the mic, so there's nothing to
+ * conflict with); a spoken answer is only listened for *after* the message
+ * finishes speaking — concurrent listen-while-speaking was tried and
+ * reverted, since SpeechRecognizer and TextToSpeech contending for the same
+ * audio path made the recognizer fail almost immediately rather than
+ * actually hearing anything, which is not a tradeoff worth making for
+ * "barge-in."
  */
 class VoiceAssistantController(
     private val context: Context,
@@ -275,12 +280,11 @@ class VoiceAssistantController(
     /**
      * Speaks [message]'s body (scraped live for Outlook/WhatsApp via the
      * accessibility service, used as-is for SMS — see AppUiConfig.forApp)
-     * plus the reply/skip/done/replay prompt, then races two input sources
-     * for the user's decision: a recognized spoken word, and a button tap
-     * via [submitAction] — whichever completes [pendingAction] first wins.
-     * The recognizer runs *concurrently* with the speech (not after it), so
-     * a spoken word barges in and immediately cuts the TTS off, rather than
-     * requiring the user to wait for the whole message to finish first.
+     * plus the reply/skip/done/replay prompt, then listens for the user's
+     * decision — but a button tap via [submitAction] can answer at any
+     * point, including while the message is still being spoken, since
+     * [pendingAction] is set before speaking starts. The recognizer itself
+     * only starts once speech finishes.
      */
     private suspend fun presentMessageAndAwaitAction(
         message: MessageEntity,
@@ -307,21 +311,30 @@ class VoiceAssistantController(
         val deferred = CompletableDeferred<UserAction?>()
         pendingAction = deferred
 
-        val speakJob = scope.launch { tts.speak(spoken) }
-        val listenJob = scope.launch {
-            val heard = stt.listenOnce(
-                timeoutMs = PRESENTATION_LISTEN_WINDOW_MS,
-                biasingStrings = biasingNames,
-                onSpeechDetected = { tts.stop() },
-            )
-            val parsed = parseUserAction(heard)
-            Log.d(TAG, "presentMessageAndAwaitAction: id=${message.id} heard=\"$heard\" parsed=$parsed")
-            if (!deferred.isCompleted) deferred.complete(parsed)
+        // A button tap is answered immediately, even mid-speech (it never
+        // touches the mic, so there's no conflict) — but the recognizer
+        // itself only starts *after* speech finishes. Starting it while the
+        // TTS is still talking was tried and reverted: SpeechRecognizer and
+        // TextToSpeech contend for the same audio input/output path, and in
+        // practice the recognizer errors out almost immediately rather than
+        // genuinely listening over the speech, which is what made every
+        // message resolve to "skipped for later" before the user ever had a
+        // chance to answer. Sequential is slower but actually listens.
+        tts.speak(spoken)
+
+        val listenJob = if (!deferred.isCompleted) {
+            scope.launch {
+                val heard = stt.listenOnce(timeoutMs = PRESENTATION_LISTEN_WINDOW_MS, biasingStrings = biasingNames)
+                val parsed = parseUserAction(heard)
+                Log.d(TAG, "presentMessageAndAwaitAction: id=${message.id} heard=\"$heard\" parsed=$parsed")
+                if (!deferred.isCompleted) deferred.complete(parsed)
+            }
+        } else {
+            null
         }
 
         val action = deferred.await()
-        listenJob.cancel()
-        speakJob.cancel()
+        listenJob?.cancel()
         tts.stop()
         pendingAction = null
 

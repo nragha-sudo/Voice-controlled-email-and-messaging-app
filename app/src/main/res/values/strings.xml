@@ -11,7 +11,7 @@
     <string name="btn_search">Search</string>
     <string name="hint_search">Search keywords…</string>
     <string name="label_unread_count">Unread: %1$d</string>
-    <string name="label_unread_count_short">%1$d unread</string>
+    <string name="label_unread_count_short">%1$d</string>
 
     <string name="status_idle">Idle</string>
     <string name="status_notification_access_missing">Notification access is off — tap to enable</string>
@@ -35,8 +35,6 @@
     <string name="sms_search_unsupported">SMS search isn\'t supported — SMS messages already store their full text, so there\'s nothing to search on-screen.</string>
 
     <string name="btn_clear_cache">Clear Cache</string>
-    <string name="clear_cache_all_confirm_title">Clear all cached messages?</string>
-    <string name="clear_cache_all_confirm_message">This deletes every queued message (all sources, read and unread) from the local database. New notifications are still captured normally afterward. This can\'t be undone.</string>
     <string name="clear_cache_app_confirm_title">Clear %1$s cache?</string>
     <string name="clear_cache_app_confirm_message">This deletes every queued %1$s message (read and unread) from the local database. New %1$s notifications are still captured normally afterward. This can\'t be undone.</string>
     <string name="clear_cache_confirm_positive">Clear</string>

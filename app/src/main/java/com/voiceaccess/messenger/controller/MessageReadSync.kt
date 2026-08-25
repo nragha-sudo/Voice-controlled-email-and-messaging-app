@@ -19,21 +19,20 @@ data class ReadSyncResult(val readOnSource: Boolean, val note: String?)
  * "mark read" affordance the accessibility service could safely drive
  * without also risking an accidental open/action on the wrong email).
  *
- * Used from two call sites that both end a message's life cycle the same
+ * Used from three call sites that all end a message's life cycle the same
  * way: [com.voiceaccess.messenger.controller.VoiceAssistantController]'s
- * "done"/successful-reply branches (voice flow) and
+ * "done"/successful-reply actions (voice *or* button), and
  * `server/LocalApiServer`'s `POST /api/messages/{id}/read` (Claude/API flow)
- * — so "read via voice" and "read via Claude" mark the source app
+ * — so "read via voice/button" and "read via Claude" mark the source app
  * identically instead of the API being a second, divergent code path.
  */
 class MessageReadSync(private val context: Context) {
 
     /**
-     * [whatsAppAlreadyOpened] lets a caller that just opened the real
-     * WhatsApp conversation (e.g. [VoiceAssistantController]'s read-aloud
-     * loop, which calls [MessageAccessibilityService.openAndReadMessage]
-     * moments earlier for the same message) skip reopening it here — see
-     * [markWhatsAppRead].
+     * API-server path: marks read locally (keeps the row, flips [MessageEntity.readAloud])
+     * and attempts the on-source mark. [whatsAppAlreadyOpened] lets a caller
+     * that just opened the real WhatsApp conversation skip reopening it
+     * here — see [markWhatsAppRead].
      */
     suspend fun markRead(
         repository: MessageRepository,
@@ -41,8 +40,32 @@ class MessageReadSync(private val context: Context) {
         whatsAppAlreadyOpened: Boolean = false,
     ): ReadSyncResult {
         repository.markReadAloud(message.id)
+        val result = attemptSourceMark(message, whatsAppAlreadyOpened)
+        if (result.readOnSource) repository.markReadOnSource(message.id)
+        Log.d(TAG, "markRead: id=${message.id} source=${message.sourceApp.name} readOnSource=${result.readOnSource}")
+        return result
+    }
 
-        val result = when (message.sourceApp) {
+    /**
+     * Voice/button "Done" path, and a successfully sent "Reply": per the
+     * user's spec, Done removes the message from the local database outright
+     * rather than just flagging it read — unlike [markRead] there's no row
+     * left afterward to flip [MessageEntity.readOnSource] on, but the
+     * on-source mark-as-read attempt still happens first, exactly as before.
+     */
+    suspend fun markReadAndDelete(
+        repository: MessageRepository,
+        message: MessageEntity,
+        whatsAppAlreadyOpened: Boolean = false,
+    ): ReadSyncResult {
+        val result = attemptSourceMark(message, whatsAppAlreadyOpened)
+        repository.deleteMessage(message.id)
+        Log.d(TAG, "markReadAndDelete: id=${message.id} source=${message.sourceApp.name} readOnSource=${result.readOnSource}")
+        return result
+    }
+
+    private suspend fun attemptSourceMark(message: MessageEntity, whatsAppAlreadyOpened: Boolean): ReadSyncResult =
+        when (message.sourceApp) {
             SourceApp.SMS -> markSmsRead(message)
             SourceApp.WHATSAPP -> markWhatsAppRead(message, whatsAppAlreadyOpened)
             SourceApp.OUTLOOK -> ReadSyncResult(
@@ -51,11 +74,6 @@ class MessageReadSync(private val context: Context) {
                     "safe on-screen affordance to drive) — skipped by design, only the local queue was updated.",
             )
         }
-
-        if (result.readOnSource) repository.markReadOnSource(message.id)
-        Log.d(TAG, "markRead: id=${message.id} source=${message.sourceApp.name} readOnSource=${result.readOnSource}")
-        return result
-    }
 
     private fun markSmsRead(message: MessageEntity): ReadSyncResult {
         val ok = SmsReadMarker.tryMarkRead(context, message.smsThreadId)

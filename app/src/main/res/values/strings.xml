@@ -2,10 +2,11 @@
 <resources>
     <string name="app_name">Voice Access Messenger</string>
 
-    <string name="btn_read_outlook">Outlook</string>
-    <string name="btn_read_whatsapp">WhatsApp</string>
-    <string name="btn_read_sms">SMS</string>
-    <string name="btn_stop_reading">Stop Reading</string>
+    <!-- Logo-only play/pause buttons: no visible text, so contentDescription is the only label a screen reader gets. -->
+    <string name="cd_play_pause_outlook">Outlook — tap to read unread messages, tap again to pause</string>
+    <string name="cd_play_pause_whatsapp">WhatsApp — tap to read unread messages, tap again to pause</string>
+    <string name="cd_play_pause_sms">SMS — tap to read unread messages, tap again to pause</string>
+
     <string name="btn_voice_command">Voice Command</string>
     <string name="btn_search">Search</string>
     <string name="hint_search">Search keywords…</string>
@@ -17,20 +18,30 @@
     <string name="status_accessibility_missing">Accessibility service is off — tap to enable</string>
     <string name="status_sms_permission_missing">SMS access is off — tap to enable</string>
     <string name="status_ready">Ready</string>
+    <string name="status_nothing_pending">Nothing waiting on a reply/skip/done/replay right now.</string>
 
-    <string name="prompt_reply_or_next">Say reply, skip, or done.</string>
+    <!-- The Replay/Done/Reply/Skip icon row: bold, icon-only, so each needs a spoken label for screen readers. -->
+    <string name="cd_action_replay">Replay — say the current message again</string>
+    <string name="cd_action_done">Done — mark read and remove it</string>
+    <string name="cd_action_reply">Reply — say a reply to send</string>
+    <string name="cd_action_skip">Skip — leave it unread for later</string>
+
+    <string name="prompt_reply_or_next">Say reply, skip, done, or replay — or use the buttons below.</string>
     <string name="prompt_say_reply">Go ahead, say your reply.</string>
     <string name="marked_as_done">Marked as done.</string>
     <string name="skipped_for_later">Skipped for later.</string>
     <string name="stopping_read_aloud">Stopping.</string>
     <string name="no_unread_messages">You have no unread messages.</string>
+    <string name="sms_search_unsupported">SMS search isn\'t supported — SMS messages already store their full text, so there\'s nothing to search on-screen.</string>
 
-    <string name="btn_clear_queue">Clear Queue</string>
-    <string name="clear_queue_confirm_title">Clear message queue?</string>
-    <string name="clear_queue_confirm_message">This deletes every queued message (read and unread) from the local database. New notifications are still captured normally afterward. This can\'t be undone.</string>
-    <string name="clear_queue_confirm_positive">Clear</string>
-    <string name="clear_queue_confirm_negative">Cancel</string>
-    <string name="clear_queue_done">Queue cleared.</string>
+    <string name="btn_clear_cache">Clear Cache</string>
+    <string name="clear_cache_all_confirm_title">Clear all cached messages?</string>
+    <string name="clear_cache_all_confirm_message">This deletes every queued message (all sources, read and unread) from the local database. New notifications are still captured normally afterward. This can\'t be undone.</string>
+    <string name="clear_cache_app_confirm_title">Clear %1$s cache?</string>
+    <string name="clear_cache_app_confirm_message">This deletes every queued %1$s message (read and unread) from the local database. New %1$s notifications are still captured normally afterward. This can\'t be undone.</string>
+    <string name="clear_cache_confirm_positive">Clear</string>
+    <string name="clear_cache_confirm_negative">Cancel</string>
+    <string name="clear_cache_done">Cache cleared.</string>
 
     <string name="label_api_server_section">Local API Server (for Claude)</string>
     <string name="btn_start_server">Start Server</string>

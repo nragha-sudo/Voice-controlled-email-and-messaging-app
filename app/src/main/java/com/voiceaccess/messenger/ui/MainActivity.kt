@@ -21,6 +21,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.voiceaccess.messenger.R
 import com.voiceaccess.messenger.accessibility.MessageAccessibilityService
+import com.voiceaccess.messenger.controller.UserAction
 import com.voiceaccess.messenger.data.SourceApp
 import com.voiceaccess.messenger.databinding.ActivityMainBinding
 import com.voiceaccess.messenger.server.ApiKeyStore
@@ -29,12 +30,12 @@ import com.voiceaccess.messenger.voice.ContactsProvider
 import kotlinx.coroutines.launch
 
 /**
- * The app's single screen: separate Outlook, WhatsApp, and SMS read buttons
- * (each filters the queue to that source only), a tap-then-speak
- * voice-command button (covers phrases like "read my messages" / "search
- * whatsapp for invoice"), a typed search fallback for testing without a
- * microphone, and the local API server controls (start/stop, API key) that
- * let Claude query the same queue over Tailscale — see server/LocalApiServer.kt.
+ * The app's single screen: each source (WhatsApp/Outlook/SMS) is a
+ * logo-only play/pause button plus its own Search and Clear Cache buttons;
+ * a Replay/Done/Reply/Skip icon row answers whatever message is currently
+ * being read — by tap, exactly equivalent to saying the matching word,
+ * see [com.voiceaccess.messenger.controller.VoiceAssistantController]; a
+ * tap-then-speak voice-command button; and the local API server controls.
  */
 class MainActivity : AppCompatActivity() {
 
@@ -43,14 +44,14 @@ class MainActivity : AppCompatActivity() {
     private val apiKeyStore by lazy { ApiKeyStore(applicationContext) }
 
     /**
-     * Every entry point that can end up listening for speech (both read
-     * buttons — they listen for reply/skip/done after each message — and the
-     * voice-command button) must request RECORD_AUDIO *before* starting,
-     * not just the voice-command button. Without this, SpeechRecognizer
-     * fails instantly instead of actually listening, which looks like "the
-     * app doesn't pause to listen at all." READ_CONTACTS is requested
-     * alongside it (but never blocks the action if declined) so speech
-     * recognition can bias toward contact names.
+     * Every entry point that can end up listening for speech (the source
+     * play/pause buttons — they listen for replay/done/reply/skip after
+     * each message — and the voice-command button) must request
+     * RECORD_AUDIO *before* starting, not just the voice-command button.
+     * Without this, SpeechRecognizer fails instantly instead of actually
+     * listening. READ_CONTACTS is requested alongside it (but never blocks
+     * the action if declined) so speech recognition can bias toward contact
+     * names.
      */
     private var pendingMicAction: (() -> Unit)? = null
 
@@ -78,25 +79,34 @@ class MainActivity : AppCompatActivity() {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        binding.btnReadOutlook.setOnClickListener {
-            withMicPermission { viewModel.controller.readUnreadMessages(SourceApp.OUTLOOK) }
+        binding.btnPlayPauseWhatsapp.setOnClickListener {
+            withMicPermission { viewModel.controller.togglePlayPause(SourceApp.WHATSAPP) }
         }
-        binding.btnReadWhatsapp.setOnClickListener {
-            withMicPermission { viewModel.controller.readUnreadMessages(SourceApp.WHATSAPP) }
+        binding.btnPlayPauseOutlook.setOnClickListener {
+            withMicPermission { viewModel.controller.togglePlayPause(SourceApp.OUTLOOK) }
         }
-        binding.btnReadSms.setOnClickListener {
-            withMicPermission { viewModel.controller.readUnreadMessages(SourceApp.SMS) }
+        binding.btnPlayPauseSms.setOnClickListener {
+            withMicPermission { viewModel.controller.togglePlayPause(SourceApp.SMS) }
         }
+
+        binding.btnSearchWhatsapp.setOnClickListener { searchApp(SourceApp.WHATSAPP) }
+        binding.btnSearchOutlook.setOnClickListener { searchApp(SourceApp.OUTLOOK) }
+        binding.btnSearchSms.setOnClickListener { searchApp(SourceApp.SMS) }
+
+        binding.btnClearCacheWhatsapp.setOnClickListener { confirmClearCache(SourceApp.WHATSAPP) }
+        binding.btnClearCacheOutlook.setOnClickListener { confirmClearCache(SourceApp.OUTLOOK) }
+        binding.btnClearCacheSms.setOnClickListener { confirmClearCache(SourceApp.SMS) }
+        binding.btnClearCacheAll.setOnClickListener { confirmClearCache(app = null) }
+
+        binding.btnActionReplay.setOnClickListener { viewModel.controller.submitAction(UserAction.REPLAY) }
+        binding.btnActionDone.setOnClickListener { viewModel.controller.submitAction(UserAction.DONE) }
+        binding.btnActionReply.setOnClickListener { viewModel.controller.submitAction(UserAction.REPLY) }
+        binding.btnActionSkip.setOnClickListener { viewModel.controller.submitAction(UserAction.SKIP) }
+
         binding.btnVoiceCommand.setOnClickListener {
             withMicPermission { launchVoiceCommandRecognizer() }
         }
-        binding.btnSearch.setOnClickListener {
-            val keywords = binding.editSearchKeywords.text?.toString().orEmpty()
-            viewModel.controller.search(app = null, keywords = keywords)
-        }
         binding.textPermissionBanner.setOnClickListener { openMissingPermissionSettings() }
-        binding.btnClearQueue.setOnClickListener { confirmClearQueue() }
-        binding.btnStopReading.setOnClickListener { viewModel.controller.stopReading() }
         binding.btnToggleServer.setOnClickListener { toggleApiServer() }
         binding.btnCopyApiKey.setOnClickListener { copyApiKeyToClipboard() }
         binding.btnRegenerateApiKey.setOnClickListener { confirmRegenerateApiKey() }
@@ -113,9 +123,9 @@ class MainActivity : AppCompatActivity() {
         // SMS is a whole message source (not an optional bias like contacts),
         // so it's requested unconditionally on first run rather than gated
         // behind another permission the way contacts is above. SEND_SMS (for
-        // the voice "reply" flow) and POST_NOTIFICATIONS (API 33+, needed for
-        // the API server's foreground-service notification to actually show)
-        // are bundled into the same one-time request.
+        // the voice/button reply action) and POST_NOTIFICATIONS (API 33+,
+        // needed for the API server's foreground-service notification to
+        // actually show) are bundled into the same one-time request.
         val missingSmsOrNotifications = buildList {
             if (!hasPermission(Manifest.permission.RECEIVE_SMS)) add(Manifest.permission.RECEIVE_SMS)
             if (!hasPermission(Manifest.permission.READ_SMS)) add(Manifest.permission.READ_SMS)
@@ -157,11 +167,6 @@ class MainActivity : AppCompatActivity() {
                 launch {
                     viewModel.status.collect { binding.textStatus.text = it }
                 }
-                launch {
-                    viewModel.isReading.collect { reading ->
-                        binding.btnStopReading.visibility = if (reading) View.VISIBLE else View.GONE
-                    }
-                }
             }
         }
     }
@@ -170,6 +175,33 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         refreshPermissionBanner()
         refreshServerUi()
+    }
+
+    private fun searchApp(app: SourceApp) {
+        val keywords = binding.editSearchKeywords.text?.toString().orEmpty()
+        viewModel.controller.search(app, keywords)
+    }
+
+    private fun confirmClearCache(app: SourceApp?) {
+        val title = if (app == null) {
+            getString(R.string.clear_cache_all_confirm_title)
+        } else {
+            getString(R.string.clear_cache_app_confirm_title, app.displayName)
+        }
+        val message = if (app == null) {
+            getString(R.string.clear_cache_all_confirm_message)
+        } else {
+            getString(R.string.clear_cache_app_confirm_message, app.displayName)
+        }
+        MaterialAlertDialogBuilder(this)
+            .setTitle(title)
+            .setMessage(message)
+            .setPositiveButton(R.string.clear_cache_confirm_positive) { _, _ ->
+                viewModel.clearCache(app)
+                Toast.makeText(this, R.string.clear_cache_done, Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton(R.string.clear_cache_confirm_negative, null)
+            .show()
     }
 
     private fun toggleApiServer() {
@@ -208,11 +240,11 @@ class MainActivity : AppCompatActivity() {
         MaterialAlertDialogBuilder(this)
             .setTitle(R.string.api_key_regenerate_confirm_title)
             .setMessage(R.string.api_key_regenerate_confirm_message)
-            .setPositiveButton(R.string.clear_queue_confirm_positive) { _, _ ->
+            .setPositiveButton(R.string.clear_cache_confirm_positive) { _, _ ->
                 apiKeyStore.regenerateKey()
                 refreshServerUi()
             }
-            .setNegativeButton(R.string.clear_queue_confirm_negative, null)
+            .setNegativeButton(R.string.clear_cache_confirm_negative, null)
             .show()
     }
 
@@ -233,19 +265,6 @@ class MainActivity : AppCompatActivity() {
 
     private fun hasPermission(permission: String): Boolean =
         ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
-
-    /** Destructive/debug action — confirm before wiping the local queue. */
-    private fun confirmClearQueue() {
-        MaterialAlertDialogBuilder(this)
-            .setTitle(R.string.clear_queue_confirm_title)
-            .setMessage(R.string.clear_queue_confirm_message)
-            .setPositiveButton(R.string.clear_queue_confirm_positive) { _, _ ->
-                viewModel.clearQueue()
-                Toast.makeText(this, R.string.clear_queue_done, Toast.LENGTH_SHORT).show()
-            }
-            .setNegativeButton(R.string.clear_queue_confirm_negative, null)
-            .show()
-    }
 
     private fun launchVoiceCommandRecognizer() {
         val biasingNames = if (hasPermission(Manifest.permission.READ_CONTACTS)) {

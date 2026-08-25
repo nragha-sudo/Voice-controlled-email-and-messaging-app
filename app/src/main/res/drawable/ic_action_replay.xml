@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Replay: the same bold arrow as ic_action_reply, mirrored to curve left (repeat/rewind direction). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#8430CE"
+        android:pathData="M11,5 L11,9 C5,9.5 3,13 3,19 C5,15.5 7.5,14 11,14 L11,18 L19,11.5 Z" />
+</vector>

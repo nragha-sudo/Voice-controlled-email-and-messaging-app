@@ -35,8 +35,13 @@ class MessageRepository(context: Context) {
     /** See [MessageEntity.readOnSource]. */
     suspend fun markReadOnSource(id: Long) = dao.markReadOnSource(id)
 
-    /** Wipes the entire local queue (read and unread). New notifications are captured normally afterward. */
-    suspend fun clearAll() = dao.clearAll()
+    /** Removes one message outright — used by the "Done" action, which deletes rather than just flags read. */
+    suspend fun deleteMessage(id: Long) = dao.deleteById(id)
+
+    /** Wipes the local queue. [app] null wipes everything (the yellow "Clear Cache" bar); otherwise just that source (the per-app buttons). New notifications are captured normally afterward either way. */
+    suspend fun clearAll(app: SourceApp? = null) {
+        if (app == null) dao.clearAll() else dao.clearAllByApp(app)
+    }
 
     /**
      * Inserts a freshly-posted notification, or updates the existing queue

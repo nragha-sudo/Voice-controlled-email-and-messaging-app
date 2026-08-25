@@ -14,19 +14,22 @@ The app also runs a small local HTTP API (see
 external tool like Claude can list and mark-as-read messages per source over
 your private Tailscale network.
 
-Three voice commands, working identically across all three sources (SMS
-search is the one exception — see [Known limitations](#known-limitations)):
-
-- **Read my Outlook / WhatsApp messages** — two separate buttons (or "read
-  outlook/whatsapp messages" by voice) each read that app's unread queue
-  only, oldest first. After every message it listens for a spoken
-  instruction: **reply** captures and sends a spoken reply, **done** marks
-  the message read (removed from the queue), **skip** (or no input within
-  the listening window) leaves it unread so it's read again next time.
-- **Search `<keywords>`** — opens the target app's search UI, types the
-  keywords, and reads back a summary of matches.
-- **Reply** — after a message is read aloud, capture a spoken reply and send
-  it in that conversation; a successful send also marks the message done.
+Each source's logo on the main screen is a **play/pause** button, not a
+one-shot "read" button: tap it to start reading that source's unread queue
+oldest-first, tap it again to pause (nothing is lost — a paused message is
+simply offered again, in the same order, next time). After every message,
+four things can happen — **Replay** (say it again), **Done** (mark read and
+remove it from the queue), **Reply** (capture and send a spoken reply,
+which also marks it done), or **Skip** (leave it unread, try again later) —
+and each one works by *either* saying the word aloud *or* tapping its icon
+button, whichever is easier in the moment; a spoken word also barges in and
+interrupts the message currently being read, rather than requiring you to
+wait for it to finish. Search and Clear Cache are per-source (one button
+each under Outlook/WhatsApp/SMS) plus a combined "clear everything" bar,
+since search and cache-clearing are the same action whether it's scoped to
+one source or all of them. SMS has no search (see
+[Known limitations](#known-limitations)) since its full text is already
+stored — there's nothing to search around a truncated preview for.
 
 ## Architecture
 
@@ -80,14 +83,20 @@ The app is six pieces, built in this order (see the commit history):
 
 4. **`voice/` + `controller/` + `ui/`** — `TextToSpeechManager` and
    `SpeechToTextManager` are coroutine wrappers around Android's TTS and
-   `SpeechRecognizer`. `VoiceAssistantController` is the single orchestrator:
-   it queries the queue (optionally filtered to one `SourceApp`), drives the
-   accessibility service (Outlook/WhatsApp) or reads the already-complete
-   text directly (SMS), speaks results, and blocks on a real listen window
-   for reply/skip/done after each message. `MainActivity` exposes separate
-   **Outlook**, **WhatsApp**, and **SMS** read buttons plus a tap-then-speak
-   voice command button that parses phrases like "read outlook messages" /
-   "search whatsapp for invoice" / "read my sms".
+   `SpeechRecognizer`; the latter's `listenOnce` takes an optional
+   `onSpeechDetected` callback fired the instant speech is detected (well
+   before the transcript is ready), which is what lets a spoken word "barge
+   in" and cut off the TTS mid-message rather than waiting for it to finish.
+   `VoiceAssistantController` is the single orchestrator: `togglePlayPause`
+   is each source logo's tap handler (start, or pause-in-place if that
+   source is already running); every message-decision point races two
+   input sources for a `UserAction` (`REPLAY`/`DONE`/`REPLY`/`SKIP`) — a
+   parsed spoken word, and a button tap via `submitAction` — via a shared
+   `CompletableDeferred`, so voice and buttons are simply two ways of
+   answering the same question, whichever gets there first. `MainActivity`
+   wires each source's logo (icon-only, see Setup) to `togglePlayPause`,
+   the Replay/Done/Reply/Skip icon row to `submitAction`, and each source's
+   own Search/Clear Cache buttons to their per-source calls.
 
 5. **`controller/MessageReadSync`** — the shared "mark read everywhere" step
    used by both the voice flow above (its "done"/successful-reply branches)
@@ -277,6 +286,22 @@ drift across app updates. When a flow stops finding an element:
 - **Single active flow at a time.** Read/search/reply all share one
   accessibility action lock, matching the fact that only one app can be in
   the foreground at once.
+- **"Pause" restarts from a snapshot, it doesn't suspend mid-message.**
+  Tapping a source's logo again while it's reading cancels the in-flight
+  coroutine and halts speech immediately; because a paused-mid-message row
+  is left unread (never marked done), tapping the same logo again simply
+  re-fetches the unread queue and starts over from the earliest message —
+  which, in practice, is the very message that was paused. Indistinguishable
+  from true pause/resume from the user's side, but worth knowing it isn't
+  literally suspending and resuming the same coroutine state.
+- **Voice barge-in can hear itself.** Listening runs concurrently with the
+  TTS speaking a message (so a spoken word can interrupt it), which means
+  the mic is open while the phone's own speaker is talking. Most modern
+  devices apply acoustic echo cancellation to `VOICE_RECOGNITION`-source
+  audio automatically, but it isn't guaranteed on every device — on one
+  without it, the recognizer may occasionally pick up the TTS's own voice.
+  The on-screen Replay/Done/Reply/Skip buttons are unaffected by this either
+  way, since they don't involve the mic at all.
 - **SMS has no search flow.** Search drives each app's on-screen search UI
   (there's nothing to search around for SMS, since its text is already
   stored in full) — a spoken "search sms for …" is declined with an

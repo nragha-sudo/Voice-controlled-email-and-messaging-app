@@ -31,9 +31,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val status: StateFlow<String> = controller.status
     val isReading: StateFlow<Boolean> = controller.isReading
 
-    /** Debug utility: wipes the entire local message_queue table (read and unread). */
-    fun clearQueue() {
-        viewModelScope.launch { repository.clearAll() }
+    /** The yellow "Clear Cache" bar ([app] null) or one of the per-source buttons under each logo. */
+    fun clearCache(app: SourceApp? = null) {
+        viewModelScope.launch { repository.clearAll(app) }
     }
 
     override fun onCleared() {

@@ -62,7 +62,15 @@ interface MessageDao {
     @Query("DELETE FROM message_queue WHERE read_aloud = 1 AND timestamp < :olderThanTimestamp")
     suspend fun pruneReadOlderThan(olderThanTimestamp: Long)
 
-    /** Wipes the whole queue (read and unread) — used by the "Clear Queue" debug button. */
+    /** "Done" (voice or button) removes the message outright rather than just flagging it read — see MessageReadSync.markReadAndDelete. */
+    @Query("DELETE FROM message_queue WHERE id = :id")
+    suspend fun deleteById(id: Long)
+
+    /** Wipes the whole queue (read and unread) — the yellow "Clear Cache" bar. */
     @Query("DELETE FROM message_queue")
     suspend fun clearAll()
+
+    /** Wipes just one source's rows — the per-app "Clear Cache" button under each logo. */
+    @Query("DELETE FROM message_queue WHERE source_app = :sourceApp")
+    suspend fun clearAllByApp(sourceApp: SourceApp)
 }

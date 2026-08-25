@@ -37,8 +37,24 @@ class SpeechToTextManager(private val context: Context) {
      * the recognizer toward words it would otherwise mis-transcribe —
      * see RecognizerIntent.EXTRA_BIASING_STRINGS. Ignored gracefully on
      * recognizer implementations that don't support it.
+     *
+     * [onSpeechDetected], if given, fires the instant the recognizer
+     * registers the *start* of speech (`onBeginningOfSpeech`) — well before
+     * the transcript is ready. This is what lets a caller "barge in": start
+     * this listen concurrently with [TextToSpeechManager.speak], and stop
+     * the TTS the moment the user starts talking over it, rather than
+     * waiting for the whole message to finish first. Real caveat, not
+     * glossed over: without a dedicated echo-cancelling audio path, the mic
+     * can pick up the phone's own speaker output while it's talking, which
+     * may itself trigger this callback on some devices/rooms — most modern
+     * devices apply acoustic echo cancellation to VOICE_RECOGNITION-source
+     * audio automatically, but it isn't guaranteed on every device.
      */
-    suspend fun listenOnce(timeoutMs: Long = 8_000, biasingStrings: List<String> = emptyList()): String? {
+    suspend fun listenOnce(
+        timeoutMs: Long = 8_000,
+        biasingStrings: List<String> = emptyList(),
+        onSpeechDetected: (() -> Unit)? = null,
+    ): String? {
         if (!SpeechRecognizer.isRecognitionAvailable(context)) {
             Log.e(TAG, "listenOnce: SpeechRecognizer.isRecognitionAvailable() is false — this device has no " +
                 "speech recognition service available (Google app disabled/missing, or no default assistant " +
@@ -87,6 +103,7 @@ class SpeechToTextManager(private val context: Context) {
                         }
                         override fun onBeginningOfSpeech() {
                             Log.d(TAG, "listenOnce: onBeginningOfSpeech — heard the start of speech")
+                            onSpeechDetected?.invoke()
                         }
                         override fun onEndOfSpeech() {
                             Log.d(TAG, "listenOnce: onEndOfSpeech")

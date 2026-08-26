@@ -368,18 +368,60 @@ class MessageAccessibilityService : AccessibilityService() {
             return@withLock false
         }
 
-        delay(selectors.settleDelayMs)
-        val refreshedRoot = pollForRoot(app.packageName, ROOT_POLL_TIMEOUT_MS) ?: root
-        val sendButton = NodeTreeUtils.findFirstByViewIdAny(refreshedRoot, selectors.sendButtonIds)
-            ?: NodeTreeUtils.findFirstByContentDescriptionAny(refreshedRoot, selectors.sendButtonContentDescriptions)
-            ?: run {
-                Log.e(TAG, "sendReply: aborted — no send button found for ${app.name}")
-                return@withLock false
-            }
+        // WhatsApp's send button is the same physical control that shows a
+        // mic icon when the entry field is empty — it only becomes clickable
+        // as "send" once the app's own TextWatcher reacts to the text we just
+        // pushed via ACTION_SET_TEXT, which can lag a beat behind the action
+        // returning true. A single fixed delay before looking for the send
+        // button was the likely cause of replies intermittently missing
+        // (clicking too early hits the button while it's still the mic), so
+        // poll for the field to actually reflect the text instead of guessing
+        // a delay.
+        val textStuck = waitForReplyTextToStick(app.packageName, selectors, replyText)
+        if (!textStuck) {
+            Log.w(TAG, "sendReply: reply text did not visibly stick within ${TEXT_CONFIRM_TIMEOUT_MS}ms for ${app.name} — trying to send anyway")
+        }
 
-        val clicked = NodeTreeUtils.click(sendButton)
+        delay(selectors.settleDelayMs)
+        var clicked = false
+        var sendButtonSeen = false
+        repeat(SEND_CLICK_ATTEMPTS) { attempt ->
+            if (clicked) return@repeat
+            val refreshedRoot = pollForRoot(app.packageName, ROOT_POLL_TIMEOUT_MS) ?: root
+            val sendButton = NodeTreeUtils.findFirstByViewIdAny(refreshedRoot, selectors.sendButtonIds)
+                ?: NodeTreeUtils.findFirstByContentDescriptionAny(refreshedRoot, selectors.sendButtonContentDescriptions)
+            if (sendButton != null) {
+                sendButtonSeen = true
+                clicked = NodeTreeUtils.click(sendButton)
+            }
+            Log.d(TAG, "sendReply: app=${app.name} send attempt=$attempt found=${sendButton != null} clicked=$clicked")
+            if (!clicked) delay(SEND_RETRY_DELAY_MS)
+        }
+
+        if (!sendButtonSeen) {
+            Log.e(TAG, "sendReply: aborted — no send button found for ${app.name}")
+            return@withLock false
+        }
+
         Log.d(TAG, "sendReply: app=${app.name} send button clicked=$clicked")
         clicked
+    }
+
+    /**
+     * Polls the reply field until its live text matches [expected], instead
+     * of trusting a single fixed delay — see the comment in [sendReply] for
+     * why that single delay was flaky.
+     */
+    private suspend fun waitForReplyTextToStick(packageName: String, selectors: AppUiSelectors, expected: String): Boolean {
+        val deadline = System.currentTimeMillis() + TEXT_CONFIRM_TIMEOUT_MS
+        while (System.currentTimeMillis() < deadline) {
+            val root = pollForRoot(packageName, ROOT_POLL_TIMEOUT_MS) ?: return false
+            val field = NodeTreeUtils.findFirstByViewIdAny(root, selectors.replyFieldIds)
+                ?: NodeTreeUtils.findFirstByContentDescriptionAny(root, selectors.replyFieldContentDescriptions)
+            if (field?.text?.toString() == expected) return true
+            delay(TEXT_CONFIRM_POLL_INTERVAL_MS)
+        }
+        return false
     }
 
     companion object {
@@ -389,6 +431,14 @@ class MessageAccessibilityService : AccessibilityService() {
         private const val MAX_SEARCH_RESULTS = 10
         private const val LIVE_FILTER_SETTLE_MS = 400L
         private const val WHATSAPP_BUSINESS_PACKAGE = "com.whatsapp.w4b"
+
+        /** How long to poll for the reply field to visibly reflect the text we just set, before giving up and trying to send anyway. */
+        private const val TEXT_CONFIRM_TIMEOUT_MS = 1_500L
+        private const val TEXT_CONFIRM_POLL_INTERVAL_MS = 100L
+
+        /** A second send-button click attempt covers the case where the button was still showing its "mic" state on the first try. */
+        private const val SEND_CLICK_ATTEMPTS = 2
+        private const val SEND_RETRY_DELAY_MS = 350L
 
         /** Cap on scroll-and-accumulate steps for a long email body, so a mis-detected "scrollable" node can't loop forever. */
         private const val MAX_SCROLL_ATTEMPTS = 20

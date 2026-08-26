@@ -52,6 +52,7 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
+                android:layout_marginEnd="6dp"
                 android:orientation="vertical"
                 android:gravity="center_horizontal">
 
@@ -91,21 +92,26 @@
                     android:id="@+id/btnClearCacheWhatsapp"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="14dp"
+                    android:layout_marginTop="16dp"
+                    android:contentDescription="@string/cd_clear_cache_whatsapp"
                     android:minWidth="0dp"
                     android:minHeight="0dp"
-                    android:paddingLeft="10dp"
-                    android:paddingRight="10dp"
+                    android:paddingLeft="14dp"
+                    android:paddingRight="14dp"
+                    android:paddingTop="6dp"
+                    android:paddingBottom="6dp"
                     android:backgroundTint="#F2C94C"
                     android:text="@string/btn_clear_cache"
                     android:textColor="#3D3200"
-                    android:textSize="11sp" />
+                    android:textSize="12sp" />
             </LinearLayout>
 
             <LinearLayout
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
+                android:layout_marginStart="6dp"
+                android:layout_marginEnd="6dp"
                 android:orientation="vertical"
                 android:gravity="center_horizontal">
 
@@ -145,21 +151,25 @@
                     android:id="@+id/btnClearCacheOutlook"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="14dp"
+                    android:layout_marginTop="16dp"
+                    android:contentDescription="@string/cd_clear_cache_outlook"
                     android:minWidth="0dp"
                     android:minHeight="0dp"
-                    android:paddingLeft="10dp"
-                    android:paddingRight="10dp"
+                    android:paddingLeft="14dp"
+                    android:paddingRight="14dp"
+                    android:paddingTop="6dp"
+                    android:paddingBottom="6dp"
                     android:backgroundTint="#F2C94C"
                     android:text="@string/btn_clear_cache"
                     android:textColor="#3D3200"
-                    android:textSize="11sp" />
+                    android:textSize="12sp" />
             </LinearLayout>
 
             <LinearLayout
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
+                android:layout_marginStart="6dp"
                 android:orientation="vertical"
                 android:gravity="center_horizontal">
 
@@ -199,15 +209,18 @@
                     android:id="@+id/btnClearCacheSms"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="14dp"
+                    android:layout_marginTop="16dp"
+                    android:contentDescription="@string/cd_clear_cache_sms"
                     android:minWidth="0dp"
                     android:minHeight="0dp"
-                    android:paddingLeft="10dp"
-                    android:paddingRight="10dp"
+                    android:paddingLeft="14dp"
+                    android:paddingRight="14dp"
+                    android:paddingTop="6dp"
+                    android:paddingBottom="6dp"
                     android:backgroundTint="#F2C94C"
                     android:text="@string/btn_clear_cache"
                     android:textColor="#3D3200"
-                    android:textSize="11sp" />
+                    android:textSize="12sp" />
             </LinearLayout>
         </LinearLayout>
 

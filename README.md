@@ -6,6 +6,11 @@ to use, so it works entirely by listening to notifications and driving each
 app's own on-screen UI via Android's accessibility APIs — the same mechanism
 screen readers use.
 
+This repo also includes a separate, unrelated macOS companion app —
+`macos/VoiceDictationMenuBar/` — a menu bar app that does hands-free,
+wake-word-triggered voice dictation into Google Chrome (e.g. Claude.ai's
+message box). See that folder's own README for setup.
+
 Three voice commands, working identically across both apps:
 
 - **Read my Outlook / WhatsApp messages** — two separate buttons (or "read

@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleName</key>
+	<string>VoiceDictationMenuBar</string>
+	<key>CFBundleDisplayName</key>
+	<string>Voice Dictation</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.example.voicedictationmenubar</string>
+	<key>CFBundleVersion</key>
+	<string>1.0.0</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0.0</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleExecutable</key>
+	<string>VoiceDictationMenuBar</string>
+	<!-- Menu bar-only app: no Dock icon, no app menu bar of its own. -->
+	<key>LSUIElement</key>
+	<true/>
+	<key>LSMinimumSystemVersion</key>
+	<string>13.0</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Voice Dictation listens for the wake word ("Hey Claude") and your dictated speech so it can type it into Chrome for you. Audio is processed entirely on-device and is never uploaded anywhere.</string>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>Voice Dictation asks Google Chrome for its frontmost window title so it can confirm it's inserting text into the right tab.</string>
+	<key>NSHumanReadableCopyright</key>
+	<string>Voice Dictation</string>
+</dict>
+</plist>
